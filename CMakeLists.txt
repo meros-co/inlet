@@ -19,6 +19,15 @@ add_subdirectory(third_party/manifold-libs/mdns)
 
 add_subdirectory(src/core)
 
+include(cmake/GStreamerNet.cmake)
+if(GSTNET_FOUND)
+    add_subdirectory(src/ptp)
+else()
+    message(WARNING "GStreamer (gstreamer-net-1.0 >= 1.24) not found: inletd needs it for PTP")
+endif()
+
+add_subdirectory(tools)
+
 if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
