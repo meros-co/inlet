@@ -8,3 +8,4 @@ function(inlet_test name)
 endfunction()
 
 inlet_test(test_clock)
+inlet_test(test_netrx)

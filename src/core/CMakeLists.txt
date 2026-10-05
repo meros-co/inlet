@@ -6,6 +6,7 @@
 
 add_library(inlet_core STATIC
     src/Clock.cpp
+    src/NetRx.cpp
 )
 target_include_directories(inlet_core PUBLIC include)
 target_link_libraries(inlet_core PUBLIC manifold::aes67)
@@ -14,4 +15,11 @@ if(MSVC)
     target_compile_options(inlet_core PRIVATE /W4)
 else()
     target_compile_options(inlet_core PRIVATE -Wall -Wextra)
+endif()
+if(WIN32)
+    target_link_libraries(inlet_core PUBLIC ws2_32 avrt)
+    target_compile_definitions(inlet_core PUBLIC _WIN32_WINNT=0x0A00)
+else()
+    find_package(Threads REQUIRED)
+    target_link_libraries(inlet_core PUBLIC Threads::Threads)
 endif()
