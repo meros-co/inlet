@@ -4,6 +4,7 @@
 #include "Sap.h"
 
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <random>
 
@@ -35,6 +36,7 @@ namespace
 constexpr const char* kGroup = "239.255.255.255";
 constexpr uint16_t kPort = 9875;
 constexpr int64_t kIntervalMs = 30000;
+constexpr int64_t kRetryListenMs = 5000;
 
 int64_t nowMs()
 {
@@ -111,9 +113,41 @@ bool Sap::start(std::string& error)
     WSADATA wsa;
     WSAStartup(MAKEWORD(2, 2), &wsa);
 #endif
-    SockT rx = socket(AF_INET, SOCK_DGRAM, 0);
     SockT tx = socket(AF_INET, SOCK_DGRAM, 0);
-    if (rx == BAD_SOCK || tx == BAD_SOCK)
+    if (tx == BAD_SOCK)
+    {
+        error = "SAP: socket failed";
+        return false;
+    }
+    if (!openListener(error))
+    {
+        std::lock_guard<std::mutex> g(lock);
+        listenError = error;
+    }
+    if (ifaceAddr != 0)
+    {
+        in_addr a {};
+        a.s_addr = ifaceAddr;
+        setsockopt(tx, IPPROTO_IP, IP_MULTICAST_IF, (const char*) &a, sizeof a);
+    }
+    int ttl = 15;
+    setsockopt(tx, IPPROTO_IP, IP_MULTICAST_TTL, (const char*) &ttl, sizeof ttl);
+    txSock = (intptr_t) tx;
+    running = true;
+    thread = std::thread([this] { run(); });
+    return true;   // error, if set, says what does not work
+}
+
+std::string Sap::warning() const
+{
+    std::lock_guard<std::mutex> g(lock);
+    return listenError;
+}
+
+bool Sap::openListener(std::string& error)
+{
+    SockT rx = socket(AF_INET, SOCK_DGRAM, 0);
+    if (rx == BAD_SOCK)
     {
         error = "SAP: socket failed";
         return false;
@@ -133,28 +167,14 @@ bool Sap::start(std::string& error)
         // works; hearing other devices' announcements does not.
         error = "SAP: port 9875 is held by another program; Inlet announces its senders but cannot hear others'";
         closesock(rx);
-        rx = BAD_SOCK;
+        return false;
     }
-    else
-    {
-        ip_mreq m {};
-        inet_pton(AF_INET, kGroup, &m.imr_multiaddr);
-        m.imr_interface.s_addr = ifaceAddr;
-        setsockopt(rx, IPPROTO_IP, IP_ADD_MEMBERSHIP, (const char*) &m, sizeof m);
-    }
-    if (ifaceAddr != 0)
-    {
-        in_addr a {};
-        a.s_addr = ifaceAddr;
-        setsockopt(tx, IPPROTO_IP, IP_MULTICAST_IF, (const char*) &a, sizeof a);
-    }
-    int ttl = 15;
-    setsockopt(tx, IPPROTO_IP, IP_MULTICAST_TTL, (const char*) &ttl, sizeof ttl);
-    rxSock = rx == BAD_SOCK ? -1 : (intptr_t) rx;
-    txSock = (intptr_t) tx;
-    running = true;
-    thread = std::thread([this] { run(); });
-    return true;   // error, if set, says what does not work
+    ip_mreq m {};
+    inet_pton(AF_INET, kGroup, &m.imr_multiaddr);
+    m.imr_interface.s_addr = ifaceAddr;
+    setsockopt(rx, IPPROTO_IP, IP_ADD_MEMBERSHIP, (const char*) &m, sizeof m);
+    rxSock = (intptr_t) rx;
+    return true;
 }
 
 void Sap::stop()
@@ -172,8 +192,8 @@ void Sap::stop()
     }
     for (auto& [id, o] : all)
         sendNow(id, o.sdp, true);
-    if (rxSock != -1)
-        closesock((SockT) rxSock);
+    if (rxSock.load() != -1)
+        closesock((SockT) rxSock.exchange(-1));
     closesock((SockT) txSock);
 }
 
@@ -235,8 +255,24 @@ void Sap::sendNow(const std::string& id, const std::string& sdp, bool deletion)
 void Sap::run()
 {
     uint8_t buf[4096];
+    int64_t lastTry = nowMs();
     while (running)
     {
+        // Announce-only: the port may have come free (or a sharing program
+        // taken it), so try it again every few seconds.
+        if (rxSock.load() == -1 && nowMs() - lastTry >= kRetryListenMs)
+        {
+            lastTry = nowMs();
+            std::string error;
+            if (openListener(error))
+            {
+                {
+                    std::lock_guard<std::mutex> g(lock);
+                    listenError.clear();
+                }
+                std::fprintf(stderr, "inletd: SAP: port 9875 is free now; listening\n");
+            }
+        }
         int ready = 0;
 #if defined(_WIN32)
         WSAPOLLFD pfd { (SockT) rxSock, POLLIN, 0 };

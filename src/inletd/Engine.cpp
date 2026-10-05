@@ -448,7 +448,7 @@ nlohmann::json Engine::Impl::status() const
              { "sampleRate", config.sampleRate }, { "bufferSize", buffer }, { "inputs", config.inputs },
              { "outputs", config.outputs }, { "linkOffsetFrames", region->header().linkOffsetFrames.load() },
              { "drivers", drivers }, { "hosts", hosts }, { "clients", clients }, { "ptp", ptpJson() },
-             { "sap", { { "announcing", sap != nullptr }, { "listening", sap != nullptr && sap->listening() }, { "warning", sapWarning } } },
+             { "sap", { { "announcing", sap != nullptr }, { "listening", sap != nullptr && sap->listening() }, { "warning", sap != nullptr ? sap->warning() : sapWarning } } },
              { "receivers", receivers }, { "senders", senders },
              { "nmos", { { "nodeId", config.nodeId }, { "deviceId", config.deviceId } } } };
 }

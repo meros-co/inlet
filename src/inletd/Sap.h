@@ -6,7 +6,8 @@
  * SAP (RFC 2974): how AES67 devices without NMOS find each other's streams.
  * Inlet listens on 239.255.255.255:9875 for announcements (a list of streams
  * to offer in the app) and announces its own senders there every 30 s, with a
- * deletion when a sender stops.
+ * deletion when a sender stops. When another program holds the port without
+ * sharing it, Inlet announces only, and tries the port again every 5 s.
  *
  * The packet code is socket-free (encode/decode) and tested on its own.
  */
@@ -51,9 +52,11 @@ public:
     ~Sap();
 
     /** False when SAP cannot run at all. True with `warning` set when it
-        runs announce-only (another program holds the port). */
+        runs announce-only (another program holds the port, for now). */
     bool start(std::string& warning);
-    bool listening() const { return rxSock != -1; }
+    bool listening() const { return rxSock.load() != -1; }
+    /** Why it is announce-only; empty once it listens. */
+    std::string warning() const;
     void stop();
 
     /** Announce (or re-announce, when the SDP changed) a session; withdraw it. */
@@ -65,14 +68,18 @@ public:
 
 private:
     void run();
+    /** Binds and joins the listening socket; false with the reason. */
+    bool openListener(std::string& error);
     void sendNow(const std::string& id, const std::string& sdp, bool deletion);
 
     std::string iface;
     uint32_t ifaceAddr = 0;
-    intptr_t rxSock = -1, txSock = -1;
+    std::atomic<intptr_t> rxSock { -1 };
+    intptr_t txSock = -1;
+    std::string listenError;   // guarded by `lock`
     std::atomic<bool> running { false };
     std::thread thread;
-    std::mutex lock;
+    mutable std::mutex lock;
     struct Ours { std::string sdp; uint16_t hash = 0; int64_t lastSentMs = 0; };
     std::map<std::string, Ours> ours;
     uint16_t nextHash = 1;
