@@ -5,9 +5,21 @@
 # streams, SAP, NMOS -- for Inlet's drivers and app.
 
 add_library(inletd_lib STATIC
+    Config.cpp
     HttpClient.cpp
     Ids.cpp
+    NetInfo.cpp
     NmosNode.cpp
+    Sap.cpp
+    StreamManager.cpp
 )
 target_include_directories(inletd_lib PUBLIC .)
 target_link_libraries(inletd_lib PUBLIC inlet_core manifold::mdns nlohmann_json::nlohmann_json httplib::httplib)
+if(TARGET inlet_ptp)
+    target_link_libraries(inletd_lib PUBLIC inlet_ptp)
+    target_compile_definitions(inletd_lib PRIVATE INLET_HAVE_PTP=1)
+endif()
+if(WIN32)
+    target_link_libraries(inletd_lib PUBLIC iphlpapi)
+    target_compile_definitions(inletd_lib PUBLIC _CRT_SECURE_NO_WARNINGS)
+endif()

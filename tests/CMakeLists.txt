@@ -13,6 +13,7 @@ inlet_test(test_nettx)
 inlet_test(test_discipline)
 inlet_test(test_ratebridge)
 inlet_test(test_nmos inletd_lib)
+inlet_test(test_streams inletd_lib)
 inlet_test(test_device)
 
 if(WIN32)
