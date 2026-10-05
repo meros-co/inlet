@@ -19,3 +19,21 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 FetchContent_MakeAvailable(libsamplerate)
 unset(CMAKE_POLICY_VERSION_MINIMUM)
 set(BUILD_TESTING ${_inlet_build_testing})
+
+# nlohmann/json 3.11.3 (MIT): the control plane's JSON, as in Manifold.
+FetchContent_Declare(nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG 9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03)
+set(JSON_BuildTests OFF CACHE INTERNAL "")
+FetchContent_MakeAvailable(nlohmann_json)
+
+# cpp-httplib 0.18.7 (MIT): the HTTP server for NMOS and the Inlet API, and the
+# client for registration and peers. Header-only.
+FetchContent_Declare(httplib
+    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+    GIT_TAG 5814e121dfb5049f72a5c3956c3c8961b40da78b)
+set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_ZLIB_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_BROTLI_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(httplib)
