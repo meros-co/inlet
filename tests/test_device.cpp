@@ -1,0 +1,157 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Meros Inc.
+
+#include "check.h"
+#include "inlet/DeviceClient.h"
+#include "inlet/SharedRegion.h"
+
+#include <chrono>
+#include <cstring>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <vector>
+
+#if defined(_WIN32)
+#  include <process.h>
+#  define getpid _getpid
+#else
+#  include <unistd.h>
+#endif
+
+#include <aes67/rtp.h>
+
+using namespace inlet;
+
+static std::string regionName()
+{
+#if defined(_WIN32)
+    return "Local\\InletTest." + std::to_string(getpid());
+#else
+    return "/inlet.test." + std::to_string(getpid());
+#endif
+}
+
+static void sharesAudio()
+{
+    const std::string name = regionName();
+    std::string err;
+    shm::Region::Layout layout;
+    layout.inputs = 4;
+    layout.outputs = 2;
+    layout.receivers = 2;
+    layout.receiverChannels = 2;
+    auto daemon = shm::Region::create(layout, err, name.c_str());
+    CHECK(daemon != nullptr);
+    if (!daemon)
+    {
+        std::fprintf(stderr, "%s\n", err.c_str());
+        return;
+    }
+    daemon->header().linkOffsetFrames.store(10);
+    // Device input 1 plays receiver 2's channel 1; the rest are silent.
+    daemon->inputMap()[1].store(shm::mapCell(2, 1));
+    for (uint32_t t = 1000; t < 1100; ++t)
+        aes67_ring_write(daemon->rxRings(2) + 1, t, (int32_t) (t * 100));
+    std::strcpy(daemon->inputLabel(1), "Kick In");
+    daemon->header().daemonHeartbeatMono.store(monoNowNs());
+
+    DeviceClient::Options opt;
+    opt.app = "test host";
+    opt.regionName = name.c_str();
+    auto a = DeviceClient::attach(opt, err);
+    auto b = DeviceClient::attach(opt, err);
+    CHECK(a && b);
+    if (!a || !b)
+        return;
+    CHECK_EQ(a->inputs(), 4u);
+    CHECK(a->daemonAlive(monoNowNs()));
+    CHECK(a->inputLabel(1) == "Kick In");
+    CHECK(std::string(daemon->clients()[0].app) == "test host");
+
+    // Period [1010, 1020) reads the ring at 1000..1009 (10 frames of link offset).
+    std::vector<float> in0(10), in1(10);
+    float* chans[4] = { in0.data(), in1.data(), nullptr, nullptr };
+    a->readInputs(1010, chans, 4, 10);
+    CHECK_NEAR(in1[0], 1000 * 100 / 8388608.0, 1e-7);
+    CHECK_NEAR(in1[9], 1009 * 100 / 8388608.0, 1e-7);
+    CHECK_EQ(in0[0], 0.0f);
+    std::vector<int32_t> i1(10);
+    int32_t* ichans[4] = { nullptr, i1.data(), nullptr, nullptr };
+    a->readInputsInt32(1010, ichans, 4, 10);
+    CHECK_EQ(i1[3], 1003 * 100 * 256);
+
+    // One output writer at a time.
+    CHECK(a->claimOutputs());
+    CHECK(!b->claimOutputs());
+    std::vector<float> out(8, 0.25f);
+    const float* ochans[2] = { out.data(), nullptr };
+    b->writeOutputs(5000, ochans, 2, 8);   // not the owner: ignored
+    int32_t v = 0;
+    CHECK_EQ(aes67_ring_read(daemon->txRing(0), 5000, &v, 1), 0);
+    a->writeOutputs(5000, ochans, 2, 8);
+    CHECK_EQ(aes67_ring_read(daemon->txRing(0), 5000, &v, 1), 1);
+    CHECK_EQ(v, 2097152);   // 0.25 x 2^23
+    CHECK_EQ(aes67_ring_read(daemon->txRing(1), 5007, &v, 1), 1);
+    CHECK_EQ(v, 0);
+    a.reset();   // detaching gives the outputs up
+    CHECK(b->claimOutputs());
+    CHECK_EQ(daemon->clients()[0].state.load(), 0u);
+}
+
+/** The engine wakes once a period, on the media clock, with consecutive positions. */
+static void periodsOnTime()
+{
+    const std::string name = regionName() + "b";
+    std::string err;
+    auto daemon = shm::Region::create({}, err, name.c_str());
+    CHECK(daemon != nullptr);
+    if (!daemon)
+        return;
+    ClockSample c;
+    c.monoNs = monoNowNs();
+    c.ptpNs = 1'780'000'000'000'000'000LL;
+    daemon->clock().publish(c);
+
+    DeviceClient::Options opt;
+    opt.regionName = name.c_str();
+    auto client = DeviceClient::attach(opt, err);
+    CHECK(client != nullptr);
+    if (!client)
+        return;
+
+    std::mutex m;
+    std::vector<uint64_t> starts;
+    std::vector<int64_t> wakes;
+    int late = 0;
+    PeriodEngine engine(*client, 128, [&](uint64_t start, bool isLate) {
+        std::lock_guard<std::mutex> g(m);
+        starts.push_back(start);
+        wakes.push_back(monoNowNs());
+        late += isLate ? 1 : 0;
+    });
+    engine.start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    engine.stop();
+
+    std::lock_guard<std::mutex> g(m);
+    // 300 ms of 128-frame periods at 48 kHz is about 112.
+    CHECK(starts.size() >= 100);
+    for (size_t i = 1; i < starts.size(); ++i)
+        CHECK_EQ(starts[i] - starts[i - 1], 128u);
+    // Each wake-up is at its period's end on the media clock.
+    for (size_t i = 0; i < starts.size(); ++i)
+    {
+        const int64_t deadline = c.monoAt(ptpAtSample(starts[i] + 128, 48000));
+        CHECK(wakes[i] >= deadline);
+    }
+    std::printf("%zu periods, %d late, %llu resyncs\n", starts.size(), late, (unsigned long long) engine.resyncs());
+    CHECK(daemon->clients()[0].periods.load() == starts.size());
+}
+
+int main()
+{
+    sharesAudio();
+    periodsOnTime();
+    TEST_MAIN_END();
+}

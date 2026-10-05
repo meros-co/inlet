@@ -10,19 +10,26 @@ add_library(inlet_core STATIC
     src/NetRx.cpp
     src/NetTx.cpp
     src/RateBridge.cpp
+    src/SharedRegion.cpp
+    src/DeviceClient.cpp
 )
 target_include_directories(inlet_core PUBLIC include)
 target_link_libraries(inlet_core PUBLIC manifold::aes67 PRIVATE SampleRate::samplerate)
 set_target_properties(inlet_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 if(MSVC)
-    target_compile_options(inlet_core PRIVATE /W4)
+    # C4324: the shared region's alignas(64) padding is the point of it.
+    target_compile_options(inlet_core PRIVATE /W4 /wd4324)
+    target_compile_definitions(inlet_core PRIVATE _CRT_SECURE_NO_WARNINGS)
 else()
     target_compile_options(inlet_core PRIVATE -Wall -Wextra)
 endif()
 if(WIN32)
-    target_link_libraries(inlet_core PUBLIC ws2_32 avrt)
+    target_link_libraries(inlet_core PUBLIC ws2_32 avrt advapi32)
     target_compile_definitions(inlet_core PUBLIC _WIN32_WINNT=0x0A00)
 else()
     find_package(Threads REQUIRED)
     target_link_libraries(inlet_core PUBLIC Threads::Threads)
+    if(NOT APPLE)
+        target_link_libraries(inlet_core PUBLIC rt)
+    endif()
 endif()
