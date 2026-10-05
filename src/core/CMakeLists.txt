@@ -9,9 +9,10 @@ add_library(inlet_core STATIC
     src/ClockDiscipline.cpp
     src/NetRx.cpp
     src/NetTx.cpp
+    src/RateBridge.cpp
 )
 target_include_directories(inlet_core PUBLIC include)
-target_link_libraries(inlet_core PUBLIC manifold::aes67)
+target_link_libraries(inlet_core PUBLIC manifold::aes67 PRIVATE SampleRate::samplerate)
 set_target_properties(inlet_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 if(MSVC)
     target_compile_options(inlet_core PRIVATE /W4)
