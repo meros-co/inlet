@@ -7,6 +7,7 @@
 add_library(inlet_core STATIC
     src/Clock.cpp
     src/NetRx.cpp
+    src/NetTx.cpp
 )
 target_include_directories(inlet_core PUBLIC include)
 target_link_libraries(inlet_core PUBLIC manifold::aes67)
