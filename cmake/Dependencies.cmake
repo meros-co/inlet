@@ -37,3 +37,12 @@ set(HTTPLIB_USE_ZLIB_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
 set(HTTPLIB_USE_BROTLI_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
 set(HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(httplib)
+
+# JUCE 8.0.4 (AGPLv3 option): the Inlet app's UI. Only the app needs it.
+if(INLET_BUILD_APP)
+    FetchContent_Declare(JUCE
+        GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
+        GIT_TAG 8.0.4
+        GIT_SHALLOW TRUE)
+    FetchContent_MakeAvailable(JUCE)
+endif()

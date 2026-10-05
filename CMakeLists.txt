@@ -16,6 +16,12 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
+if(WIN32 OR APPLE)
+    option(INLET_BUILD_APP "Build the Inlet app (JUCE)" ON)
+else()
+    option(INLET_BUILD_APP "Build the Inlet app (JUCE)" OFF)
+endif()
+
 include(CTest)
 include(cmake/Dependencies.cmake)
 
@@ -35,6 +41,9 @@ endif()
 add_subdirectory(src/inletd)
 if(WIN32)
     add_subdirectory(src/asio)
+endif()
+if(INLET_BUILD_APP)
+    add_subdirectory(src/app)
 endif()
 add_subdirectory(tools)
 
