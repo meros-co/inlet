@@ -16,3 +16,9 @@ include(CTest)
 # Shared AES67 and mDNS libraries, vendored until meros-co/aes67 is published.
 add_subdirectory(third_party/manifold-libs/aes67)
 add_subdirectory(third_party/manifold-libs/mdns)
+
+add_subdirectory(src/core)
+
+if(BUILD_TESTING)
+    add_subdirectory(tests)
+endif()

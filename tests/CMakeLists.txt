@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 Meros Inc.
+
+function(inlet_test name)
+    add_executable(${name} ${name}.cpp)
+    target_link_libraries(${name} PRIVATE inlet_core ${ARGN})
+    add_test(NAME ${name} COMMAND ${name})
+endfunction()
+
+inlet_test(test_clock)

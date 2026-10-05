@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 Meros Inc.
+#
+# inlet_core: what every Inlet process shares -- the clock, the shared-memory
+# layout, and the real-time network paths. C++20, no framework.
+
+add_library(inlet_core STATIC
+    src/Clock.cpp
+)
+target_include_directories(inlet_core PUBLIC include)
+target_link_libraries(inlet_core PUBLIC manifold::aes67)
+set_target_properties(inlet_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+if(MSVC)
+    target_compile_options(inlet_core PRIVATE /W4)
+else()
+    target_compile_options(inlet_core PRIVATE -Wall -Wextra)
+endif()
