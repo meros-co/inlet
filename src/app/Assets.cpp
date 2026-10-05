@@ -11,22 +11,9 @@ namespace inlet::app::assets
 namespace
 {
 
-// The family marks, on the 24-unit grid with a round 1.75 stroke (the Manifold
-// ecosystem's identity, Meros Inc.'s own).
-const char* markSvg(const juce::String& name)
-{
-    if (name == "inlet")
-        return R"(<circle cx="14.5" cy="12" r="6.5"/><path d="M3 9.75 H14.5"/><path d="M3 14.25 H14.5"/>)";
-    if (name == "manifold")
-        return R"(<path d="M3 12 H9"/><path d="M9 12 C13.5 12 13 5 17.5 5 H21"/><path d="M9 12 H21"/><path d="M9 12 C13.5 12 13 19 17.5 19 H21"/><circle cx="9" cy="12" r="1.7" fill="#000000" stroke="none"/>)";
-    if (name == "eddy")
-        return R"(<path d="M12 3 A9 9 0 1 1 3 12"/><path d="M12 16.5 A4.5 4.5 0 1 1 16.5 12"/>)";
-    if (name == "basin")
-        return R"(<path d="M4 11 V17.5 A2.5 2.5 0 0 0 6.5 20 H17.5 A2.5 2.5 0 0 0 20 17.5 V11"/><path d="M8 3 V14"/><path d="M12 3 V17"/><path d="M16 3 V11.5"/>)";
-    if (name == "sluice")
-        return R"(<path d="M10 3.5 H17.5"/><path d="M13.75 3.5 V10"/><path d="M3 7 H11.5"/><path d="M3 13 H21"/><path d="M3 18 H21"/>)";
-    return nullptr;
-}
+// The Inlet mark, on a 24-unit grid with a round stroke.
+const char* const kInletMark =
+    R"(<circle cx="14.5" cy="12" r="6.5"/><path d="M3 9.75 H14.5"/><path d="M3 14.25 H14.5"/>)";
 
 std::unique_ptr<juce::Drawable> strokedMark(const char* body, juce::Colour colour, float stroke)
 {
@@ -116,12 +103,7 @@ std::unique_ptr<juce::Drawable> icon(const juce::String& name, juce::Colour colo
 
 std::unique_ptr<juce::Drawable> inletMark(juce::Colour colour, float strokeWidth)
 {
-    return strokedMark(markSvg("inlet"), colour, strokeWidth);
-}
-
-std::unique_ptr<juce::Drawable> familyMark(const juce::String& name, juce::Colour colour)
-{
-    return strokedMark(markSvg(name), colour, 1.75f);
+    return strokedMark(kInletMark, colour, strokeWidth);
 }
 
 juce::Image appIcon(int size)

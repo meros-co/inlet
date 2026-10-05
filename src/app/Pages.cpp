@@ -1089,11 +1089,11 @@ AboutPage::AboutPage(InletdClient& c) : Page(c, "About")
 void AboutPage::resized()
 {
     auto r = getLocalBounds().reduced(metric::pagePadX, 0).withTrimmedTop(metric::pagePadTop).withTrimmedBottom(metric::pagePadBottom);
-    hero = r.removeFromTop(186);
+    hero = r.removeFromTop(124);
     r.removeFromTop(24);
     logoTile = r.removeFromRight(120).removeFromTop(150);
     r.removeFromRight(28);
-    textRect = r.removeFromTop(juce::jmin(r.getHeight() - 40, 290));
+    textRect = r.removeFromTop(juce::jmin(r.getHeight() - 40, 200));
     r.removeFromTop(8);
     auto links = r.removeFromTop(24);
     source.setBounds(links.removeFromLeft(96));
@@ -1105,7 +1105,7 @@ void AboutPage::paint(juce::Graphics& g)
 {
     g.fillAll(colour::bg);
 
-    // The hero: the app, its version, its family.
+    // The hero: the app and its version.
     {
         auto r = hero.toFloat().reduced(0.5f);
         g.setGradientFill(juce::ColourGradient(colour::section, r.getX(), r.getY(), colour::bg, r.getRight(), r.getBottom(), false));
@@ -1131,39 +1131,6 @@ void AboutPage::paint(juce::Graphics& g)
         g.setFont(assets::font(type::body));
         g.drawText("An AES67 virtual sound card.", top, juce::Justification::centredLeft, true);
 
-        inner.removeFromTop(18);
-        auto rule = inner.removeFromTop(1).withWidth(juce::jmin(520, inner.getWidth()));
-        g.setGradientFill(juce::ColourGradient(colour::n700, (float) rule.getX(), 0.0f, colour::n700.withAlpha(0.0f),
-                                               (float) rule.getRight(), 0.0f, false));
-        g.fillRect(rule);
-        inner.removeFromTop(16);
-        auto family = inner.removeFromTop(24);
-        const auto kf = assets::font(type::kicker, true, 0.12f);
-        drawKicker(g, family.removeFromLeft(70), "Part of", colour::n500, type::kicker, 0.12f);
-        if (auto m = assets::familyMark("manifold", colour::text))
-            m->drawWithin(g, family.removeFromLeft(20).withSizeKeepingCentre(20, 20).toFloat(), juce::RectanglePlacement::centred, 1.0f);
-        family.removeFromLeft(10);
-        const auto mf = assets::font(13.0f, true, 0.17f);
-        g.setColour(colour::text);
-        g.setFont(mf);
-        g.drawText("MANIFOLD", family.removeFromLeft((int) juce::GlyphArrangement::getStringWidth(mf, "MANIFOLD") + 4),
-                   juce::Justification::centredLeft, false);
-        family.removeFromLeft(26);
-        juce::ignoreUnused(kf);
-        for (const char* name : { "eddy", "basin", "sluice", "inlet" })
-        {
-            const bool self = juce::String(name) == "inlet";
-            if (auto m = assets::familyMark(name, self ? colour::a300 : colour::n500))
-                m->drawWithin(g, family.removeFromLeft(16).withSizeKeepingCentre(16, 16).toFloat(), juce::RectanglePlacement::centred, 1.0f);
-            family.removeFromLeft(6);
-            const auto nf = assets::font(type::label);
-            const auto word = juce::String(name).substring(0, 1).toUpperCase() + juce::String(name).substring(1);
-            g.setColour(self ? colour::a300 : colour::n500);
-            g.setFont(nf);
-            g.drawText(word, family.removeFromLeft((int) juce::GlyphArrangement::getStringWidth(nf, word) + 2),
-                       juce::Justification::centredLeft, false);
-            family.removeFromLeft(18);
-        }
     }
 
     // The licences, and the ASIO trademark.

@@ -3,7 +3,7 @@
 #pragma once
 
 // The app's bundled assets: Inter (SIL OFL 1.1), the Phosphor UI icons (MIT),
-// the Inlet and Manifold-family marks, the app and tray icons.
+// the Inlet mark, the app and tray icons.
 
 #include <JuceHeader.h>
 
@@ -24,8 +24,6 @@ std::unique_ptr<juce::Drawable> icon(const juce::String& name, juce::Colour colo
 
 /** The Inlet mark, stroked on its 24-unit grid. */
 std::unique_ptr<juce::Drawable> inletMark(juce::Colour colour, float strokeWidth = 1.75f);
-/** The family marks for About: "manifold", "eddy", "basin", "sluice", "inlet". */
-std::unique_ptr<juce::Drawable> familyMark(const juce::String& name, juce::Colour colour);
 
 /** The app icon at about `size` px (from the PNGs). */
 juce::Image appIcon(int size);

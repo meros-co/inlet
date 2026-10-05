@@ -144,7 +144,7 @@ private:
     bool editing = false;
 };
 
-/** The app, the family it belongs to, the licences, the ASIO trademark. */
+/** The app, its licences, the ASIO trademark. */
 class AboutPage : public Page
 {
 public:
