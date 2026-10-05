@@ -195,6 +195,8 @@ void NmosNode::stop()
         wake();
         if (thread.joinable())
             thread.join();
+        if (registered)
+            unregisterAll();
     }
     if (dns != nullptr)
     {
@@ -1417,6 +1419,31 @@ bool NmosNode::registerAll(std::string& error)
     std::lock_guard<std::mutex> g(lock);
     registeredVersions = posted;
     return true;
+}
+
+void NmosNode::unregisterAll()
+{
+    std::vector<std::pair<const char*, std::string>> all;
+    for (auto& r : receivers())
+        all.push_back({ "receivers", r.value("id", "") });
+    for (auto& s : senders())
+        all.push_back({ "senders", s.value("id", "") });
+    for (auto& f : flows())
+        all.push_back({ "flows", f.value("id", "") });
+    for (auto& s : sources())
+        all.push_back({ "sources", s.value("id", "") });
+    all.push_back({ "devices", device().value("id", "") });
+    all.push_back({ "nodes", cfg.nodeId });
+    for (auto& [type, id] : all)
+    {
+        const auto r = httpRequest("DELETE", registryUrl + "/x-nmos/registration/v1.3/resource/" + type + "/" + id, {},
+                                   "application/json", 1000);
+        if (!r.connected)
+            break;   // the registry went away: it times Inlet out on its own
+    }
+    registered = false;
+    std::lock_guard<std::mutex> g(lock);
+    registeredVersions.clear();
 }
 
 bool NmosNode::registerChanged(std::string& error)

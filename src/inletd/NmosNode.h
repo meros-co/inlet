@@ -189,6 +189,9 @@ private:
     bool registerChanged(std::string& error);
     bool postResource(const std::string& type, const nlohmann::json& data, std::string& error);
     bool heartbeat(std::string& error);
+    /** On stop: deletes what was registered, children first, so the registry
+        drops Inlet now rather than at its heartbeat timeout. */
+    void unregisterAll();
     void chooseRegistry();
     void crawlPeers();
     bool crawlPeer(Peer& peer);

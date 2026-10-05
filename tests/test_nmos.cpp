@@ -6,6 +6,8 @@
 #include "Ids.h"
 #include "NmosNode.h"
 
+#include <httplib.h>
+
 #include <chrono>
 #include <cstring>
 #include <mutex>
@@ -286,6 +288,59 @@ static void transportParams()
     CHECK(!NmosNode::parseTaiTime(json("12"), ms));
 }
 
+/** A registry that records what it is told: on stop, the node deletes what it
+    registered, children first and the node last. */
+static void unregisterOnStop()
+{
+    httplib::Server registry;
+    std::mutex m;
+    std::vector<std::string> posted, deleted;
+    registry.Post("/x-nmos/registration/v1.3/resource", [&](const httplib::Request& req, httplib::Response& res) {
+        std::lock_guard<std::mutex> g(m);
+        posted.push_back(json::parse(req.body)["type"]);
+        res.status = 201;
+        res.set_content("{}", "application/json");
+    });
+    registry.Post(R"(/x-nmos/registration/v1.3/health/nodes/(.+))", [&](const httplib::Request&, httplib::Response& res) {
+        res.set_content("{}", "application/json");
+    });
+    registry.Delete(R"(/x-nmos/registration/v1.3/resource/(\w+)/(.+))", [&](const httplib::Request& req, httplib::Response& res) {
+        std::lock_guard<std::mutex> g(m);
+        deleted.push_back(req.matches[1].str() + "/" + req.matches[2].str());
+        res.status = 204;
+    });
+    const int port = registry.bind_to_any_port("127.0.0.1");
+    std::thread serve([&] { registry.listen_after_bind(); });
+
+    FakeModel model;
+    auto c = config();
+    c.registryUrl = "http://127.0.0.1:" + std::to_string(port);
+    NmosNode node(model, c);
+    node.start();
+    for (int i = 0; i < 100; ++i)
+    {
+        {
+            std::lock_guard<std::mutex> g(m);
+            if (posted.size() >= 7)
+                break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    node.stop();
+    registry.stop();
+    serve.join();
+
+    CHECK_EQ(posted.size(), 7u);   // node, device, source, flow, sender, 2 receivers
+    CHECK_EQ(deleted.size(), 7u);
+    if (deleted.size() == 7)
+    {
+        CHECK(deleted[0].rfind("receivers/", 0) == 0);
+        CHECK(deleted[2].rfind("senders/", 0) == 0);
+        CHECK(deleted[5].rfind("devices/", 0) == 0);
+        CHECK(deleted[6] == "nodes/" + c.nodeId);
+    }
+}
+
 int main()
 {
     identity();
@@ -293,5 +348,6 @@ int main()
     connection();
     channelMapping();
     transportParams();
+    unregisterOnStop();
     TEST_MAIN_END();
 }
