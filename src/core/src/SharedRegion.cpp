@@ -4,6 +4,7 @@
 #include "inlet/SharedRegion.h"
 
 #include <chrono>
+#include <cstdio>
 #include <cstring>
 #include <new>
 #include <random>
@@ -16,6 +17,7 @@
 #  include <sddl.h>
 #else
 #  include <fcntl.h>
+#  include <sys/file.h>
 #  include <sys/mman.h>
 #  include <sys/stat.h>
 #  include <unistd.h>
@@ -31,6 +33,10 @@ namespace
 {
 
 constexpr size_t align64(size_t n) { return (n + 63) & ~(size_t) 63; }
+
+constexpr const char* kDefaultRegion = "Inlet.Shared";
+constexpr const char* kDirectoryName = "Inlet.Directory";
+constexpr uint32_t kDirectoryMagic = 0x52444C49;   // "ILDR"
 
 struct Offsets
 {
@@ -58,51 +64,91 @@ Offsets offsetsFor(const Region::Layout& l)
 }
 
 #if defined(_WIN32)
-const wchar_t* const kNames[] = { L"Global\\Inlet.Shared", L"Local\\Inlet.Shared" };
-#else
-const char* const kPosixName = "/inlet.shared";
+
+std::wstring widen(const std::string& s)
+{
+    return std::wstring(s.begin(), s.end());
+}
+
+/** A new named mapping, under Global\ (the service may) or Local\ (a user
+    session may). `existed`: the name was taken, which callers treat as an
+    error. */
+HANDLE createMapping(const std::string& base, size_t size, bool& existed, std::string& error)
+{
+    // The service runs as SYSTEM; DAWs run as the user. Everyone signed in may
+    // read and write (it holds audio and labels, nothing secret).
+    SECURITY_ATTRIBUTES sa {};
+    sa.nLength = sizeof sa;
+    PSECURITY_DESCRIPTOR sd = nullptr;
+    if (ConvertStringSecurityDescriptorToSecurityDescriptorW(L"D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;AU)", SDDL_REVISION_1, &sd, nullptr))
+        sa.lpSecurityDescriptor = sd;
+    HANDLE h = nullptr;
+    existed = false;
+    for (const char* prefix : { "Global\\", "Local\\" })
+    {
+        h = CreateFileMappingW(INVALID_HANDLE_VALUE, sd ? &sa : nullptr, PAGE_READWRITE, (DWORD) ((uint64_t) size >> 32),
+                               (DWORD) (size & 0xFFFFFFFFu), widen(prefix + base).c_str());
+        if (h != nullptr)
+        {
+            existed = GetLastError() == ERROR_ALREADY_EXISTS;
+            break;
+        }
+    }
+    if (sd != nullptr)
+        LocalFree(sd);
+    if (h == nullptr)
+        error = "CreateFileMapping: error " + std::to_string(GetLastError());
+    else if (existed)
+    {
+        CloseHandle(h);
+        h = nullptr;
+    }
+    return h;
+}
+
+HANDLE openMapping(const std::string& base)
+{
+    for (const char* prefix : { "Global\\", "Local\\" })
+        if (HANDLE h = OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, widen(prefix + base).c_str()))
+            return h;
+    return nullptr;
+}
+
 #endif
 
 } // namespace
+
+std::string uniqueRegionName()
+{
+    static std::atomic<uint32_t> n { 0 };
+#if defined(_WIN32)
+    const unsigned long pid = GetCurrentProcessId();
+#else
+    const unsigned long pid = (unsigned long) getpid();
+#endif
+    return "Inlet.Shared." + std::to_string(pid) + "." + std::to_string(++n);
+}
 
 size_t Region::bytesFor(const Layout& layout)
 {
     return offsetsFor(layout).total;
 }
 
-std::unique_ptr<Region> Region::create(const Layout& l, std::string& error, const char* name)
+std::unique_ptr<Region> Region::create(const Layout& l, std::string& error, const char* nameIn)
 {
+    const std::string name = nameIn != nullptr ? nameIn : kDefaultRegion;
     const Offsets o = offsetsFor(l);
     std::unique_ptr<Region> r(new Region());
     r->size = o.total;
     void* base = nullptr;
 
 #if defined(_WIN32)
-    // The service runs as SYSTEM; DAWs run as the user. Everyone signed in may
-    // read and write the region (it holds audio and labels, nothing secret).
-    SECURITY_ATTRIBUTES sa {};
-    sa.nLength = sizeof sa;
-    PSECURITY_DESCRIPTOR sd = nullptr;
-    if (ConvertStringSecurityDescriptorToSecurityDescriptorW(L"D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;AU)", SDDL_REVISION_1, &sd,
-                                                             nullptr))
-        sa.lpSecurityDescriptor = sd;
-    HANDLE h = nullptr;
-    std::wstring wide;
-    if (name != nullptr)
-        wide.assign(name, name + std::strlen(name));
-    for (const wchar_t* n : kNames)
-    {
-        const wchar_t* use = name != nullptr ? wide.c_str() : n;
-        h = CreateFileMappingW(INVALID_HANDLE_VALUE, sd ? &sa : nullptr, PAGE_READWRITE, (DWORD) ((uint64_t) o.total >> 32),
-                               (DWORD) (o.total & 0xFFFFFFFFu), use);
-        if (h != nullptr || name != nullptr)
-            break;   // Global\ needs SeCreateGlobalPrivilege; a user session falls back to Local\ .
-    }
-    if (sd != nullptr)
-        LocalFree(sd);
+    bool existed = false;
+    HANDLE h = createMapping(name, o.total, existed, error);
     if (h == nullptr)
     {
-        error = "CreateFileMapping: error " + std::to_string(GetLastError());
+        if (existed)
+            error = "the shared region " + name + " exists already (is another inletd running?)";
         return nullptr;
     }
     base = MapViewOfFile(h, FILE_MAP_ALL_ACCESS, 0, 0, o.total);
@@ -114,12 +160,17 @@ std::unique_ptr<Region> Region::create(const Layout& l, std::string& error, cons
     }
     r->mapping = h;
 #else
-    r->posixName = name != nullptr ? name : kPosixName;
-    shm_unlink(r->posixName.c_str());
-    r->fd = shm_open(r->posixName.c_str(), O_CREAT | O_RDWR, 0666);
-    if (r->fd < 0 || ftruncate(r->fd, (off_t) o.total) != 0)
+    r->posixName = "/" + name;
+    r->fd = shm_open(r->posixName.c_str(), O_CREAT | O_EXCL | O_RDWR, 0666);
+    if (r->fd < 0)
     {
-        error = "shm_open/ftruncate failed";
+        error = "the shared region " + name + " exists already (is another inletd running?)";
+        return nullptr;
+    }
+    r->owner = true;
+    if (ftruncate(r->fd, (off_t) o.total) != 0)
+    {
+        error = "ftruncate failed";
         return nullptr;
     }
     fchmod(r->fd, 0666);
@@ -129,7 +180,6 @@ std::unique_ptr<Region> Region::create(const Layout& l, std::string& error, cons
         error = "mmap failed";
         return nullptr;
     }
-    r->owner = true;
 #endif
 
     std::memset(base, 0, o.total);
@@ -166,21 +216,18 @@ std::unique_ptr<Region> Region::create(const Layout& l, std::string& error, cons
     return r;
 }
 
-std::unique_ptr<Region> Region::open(std::string& error, const char* name)
+std::unique_ptr<Region> Region::open(std::string& error, const char* nameIn)
 {
+    std::string name;
+    if (nameIn != nullptr)
+        name = nameIn;
+    else if (!Directory::current(name, error))
+        return nullptr;
+
     std::unique_ptr<Region> r(new Region());
     void* base = nullptr;
 #if defined(_WIN32)
-    HANDLE h = nullptr;
-    std::wstring wide;
-    if (name != nullptr)
-        wide.assign(name, name + std::strlen(name));
-    for (const wchar_t* n : kNames)
-    {
-        h = OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, name != nullptr ? wide.c_str() : n);
-        if (h != nullptr || name != nullptr)
-            break;
-    }
+    HANDLE h = openMapping(name);
     if (h == nullptr)
     {
         error = "Inlet's service is not running";
@@ -206,7 +253,7 @@ std::unique_ptr<Region> Region::open(std::string& error, const char* name)
     r->mapping = h;
     r->size = (size_t) total;
 #else
-    r->posixName = name != nullptr ? name : kPosixName;
+    r->posixName = "/" + name;
     r->fd = shm_open(r->posixName.c_str(), O_RDWR, 0);
     if (r->fd < 0)
     {
@@ -246,7 +293,7 @@ Region::~Region()
     if (fd >= 0)
         close(fd);
     if (owner)
-        shm_unlink(posixName.c_str());
+        shm_unlink(posixName.c_str());   // a driver that has it mapped keeps its view
 #endif
 }
 
@@ -290,6 +337,162 @@ const aes67_ring* Region::inputRing(int input)
     if (receiver < 1 || (uint32_t) receiver > hdr->receivers || (uint32_t) channel >= hdr->receiverChannels)
         return nullptr;
     return rxRings(receiver) + channel;
+}
+
+/* ---- the directory -------------------------------------------------------------------- */
+
+struct Directory::Data
+{
+    std::atomic<uint32_t> magic;
+    std::atomic<uint32_t> seq;   // odd while the name is being written
+    char region[128];
+};
+
+std::unique_ptr<Directory> Directory::create(std::string& error, const char* nameIn)
+{
+    const std::string name = nameIn != nullptr ? nameIn : kDirectoryName;
+    std::unique_ptr<Directory> d(new Directory());
+    void* base = nullptr;
+#if defined(_WIN32)
+    bool existed = false;
+    HANDLE h = createMapping(name, sizeof(Data), existed, error);
+    if (h == nullptr)
+    {
+        // Taken -- or not ours to open with full access, which also means
+        // another inletd made it.
+        if (HANDLE other = openMapping(name); existed || other != nullptr)
+        {
+            if (other != nullptr)
+                CloseHandle(other);
+            error = "another inletd is running";
+        }
+        return nullptr;
+    }
+    base = MapViewOfFile(h, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(Data));
+    if (base == nullptr)
+    {
+        error = "MapViewOfFile: error " + std::to_string(GetLastError());
+        CloseHandle(h);
+        return nullptr;
+    }
+    d->mapping = h;
+#else
+    // A crashed inletd leaves its shm name behind; the lock file is what says
+    // whether one is running.
+    const std::string lockPath = "/tmp/" + name + ".lock";
+    d->lockFd = ::open(lockPath.c_str(), O_CREAT | O_RDWR, 0666);
+    if (d->lockFd < 0 || flock(d->lockFd, LOCK_EX | LOCK_NB) != 0)
+    {
+        error = "another inletd is running";
+        return nullptr;
+    }
+    d->posixName = "/" + name;
+    shm_unlink(d->posixName.c_str());
+    d->fd = shm_open(d->posixName.c_str(), O_CREAT | O_RDWR, 0666);
+    if (d->fd < 0 || ftruncate(d->fd, sizeof(Data)) != 0)
+    {
+        error = "shm_open failed for the directory";
+        return nullptr;
+    }
+    fchmod(d->fd, 0666);
+    base = mmap(nullptr, sizeof(Data), PROT_READ | PROT_WRITE, MAP_SHARED, d->fd, 0);
+    if (base == MAP_FAILED)
+    {
+        error = "mmap failed for the directory";
+        return nullptr;
+    }
+#endif
+    std::memset(base, 0, sizeof(Data));
+    d->data = new (base) Data();
+    return d;
+}
+
+Directory::~Directory()
+{
+    if (data != nullptr)
+        data->magic.store(0);   // drivers looking now find nothing, not a stale name
+#if defined(_WIN32)
+    if (data != nullptr)
+        UnmapViewOfFile(data);
+    if (mapping != nullptr)
+        CloseHandle(mapping);
+#else
+    if (data != nullptr)
+        munmap(data, sizeof(Data));
+    if (fd >= 0)
+    {
+        close(fd);
+        shm_unlink(posixName.c_str());
+    }
+    if (lockFd >= 0)
+        close(lockFd);   // releases the lock
+#endif
+}
+
+void Directory::publish(const std::string& regionName)
+{
+    data->seq.fetch_add(1, std::memory_order_acq_rel);
+    std::memset(data->region, 0, sizeof data->region);
+    std::strncpy(data->region, regionName.c_str(), sizeof data->region - 1);
+    data->seq.fetch_add(1, std::memory_order_acq_rel);
+    data->magic.store(kDirectoryMagic, std::memory_order_release);
+}
+
+bool Directory::current(std::string& regionName, std::string& error, const char* nameIn)
+{
+    const std::string name = nameIn != nullptr ? nameIn : kDirectoryName;
+    void* base = nullptr;
+#if defined(_WIN32)
+    HANDLE h = openMapping(name);
+    if (h == nullptr)
+    {
+        error = "Inlet's service is not running";
+        return false;
+    }
+    base = MapViewOfFile(h, FILE_MAP_READ, 0, 0, sizeof(Data));
+#else
+    const int fd = shm_open(("/" + name).c_str(), O_RDONLY, 0);
+    if (fd < 0)
+    {
+        error = "Inlet's service is not running";
+        return false;
+    }
+    base = mmap(nullptr, sizeof(Data), PROT_READ, MAP_SHARED, fd, 0);
+    if (base == MAP_FAILED)
+        base = nullptr;
+#endif
+    bool ok = false;
+    if (base != nullptr)
+    {
+        auto* data = static_cast<Data*>(base);
+        for (int tries = 0; tries < 1000 && !ok; ++tries)
+        {
+            if (data->magic.load(std::memory_order_acquire) != kDirectoryMagic)
+                break;
+            const uint32_t q = data->seq.load(std::memory_order_acquire);
+            if (q & 1u)
+                continue;
+            char copy[sizeof data->region];
+            std::memcpy(copy, data->region, sizeof copy);
+            if (data->seq.load(std::memory_order_acquire) == q)
+            {
+                regionName.assign(copy, strnlen(copy, sizeof copy));
+                ok = !regionName.empty();
+            }
+        }
+    }
+#if defined(_WIN32)
+    if (base != nullptr)
+        UnmapViewOfFile(base);
+    CloseHandle(h);
+#else
+    if (base != nullptr)
+        munmap(base, sizeof(Data));
+    close(fd);
+#endif
+    if (!ok)
+        error = "Inlet's service is starting";
+    return ok;
 }
 
 } // namespace inlet::shm

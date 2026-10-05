@@ -91,13 +91,17 @@ int main(int argc, char** argv)
     layout.outputs = 4;
     layout.receivers = 1;
     layout.receiverChannels = 2;
-    auto region = shm::Region::create(layout, err);
+    // As inletd does: the directory, then a region of its own name, published.
+    auto directory = shm::Directory::create(err);
+    const std::string regionName = shm::uniqueRegionName();
+    auto region = directory ? shm::Region::create(layout, err, regionName.c_str()) : nullptr;
     CHECK(region != nullptr);
     if (!region)
     {
-        std::fprintf(stderr, "region: %s\n", err.c_str());
+        std::fprintf(stderr, "region: %s (is inletd running?)\n", err.c_str());
         TEST_MAIN_END();
     }
+    directory->publish(regionName);
     std::strcpy(region->inputLabel(0), "Kick In");
     region->inputMap()[0].store(shm::mapCell(1, 0));
     region->header().linkOffsetFrames.store(96);

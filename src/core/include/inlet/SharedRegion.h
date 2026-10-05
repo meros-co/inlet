@@ -18,13 +18,19 @@
  *   tx rings    one per device output, written by the output-owning client
  *
  * The counts are fixed for the region's life: inletd sizes it from its
- * configuration and makes a new one (with a new serial) when they change, and
- * drivers that see a new serial or a stale heartbeat re-attach.
+ * configuration and makes a new one (with a new name and serial) when they
+ * change, and drivers that see a stale heartbeat re-attach. A driver still
+ * holding the old region keeps it alive, which is why each region has a name
+ * of its own: a fixed name could not be created again while it was held.
  *
- * Windows: a named file mapping, "Global\Inlet.Shared" (the service creates
- * it; "Local\" when inletd runs in a user session for development). POSIX
- * (development; macOS's sandboxed plug-in gets the region over a Mach service
- * instead): shm_open("/inlet.shared").
+ * The directory is how drivers find the current region: a small mapping with a
+ * fixed name that holds the region's name. inletd holds it for as long as it
+ * runs, which also makes it the guard against a second inletd.
+ *
+ * Windows: named file mappings, under "Global\" (the service has the
+ * privilege) or "Local\" when inletd runs in a user session for development.
+ * POSIX (development; macOS's sandboxed plug-in gets the region over a Mach
+ * service instead): shm_open, with a lock file for the single-instance guard.
  */
 
 #include "inlet/Clock.h"
@@ -100,9 +106,11 @@ public:
         uint32_t receivers = 8, receiverChannels = 8;
     };
 
-    /** inletd: creates (or replaces) the region. Null with the reason. */
+    /** inletd: creates a region called `name` (no prefix: "Inlet.Shared.42").
+        Null with the reason, also when one of that name exists already. */
     static std::unique_ptr<Region> create(const Layout& layout, std::string& error, const char* name = nullptr);
-    /** Drivers: opens an existing region. Null when inletd is not running. */
+    /** Drivers: opens the region the directory names (or `name`, for tests).
+        Null when inletd is not running. */
     static std::unique_ptr<Region> open(std::string& error, const char* name = nullptr);
     ~Region();
 
@@ -134,6 +142,42 @@ private:
     bool owner = false;
 #endif
 };
+
+/** Where drivers find the current region; held by inletd while it runs. */
+class Directory
+{
+public:
+    /** inletd, once at start: null, with the reason, when another inletd holds it. */
+    static std::unique_ptr<Directory> create(std::string& error, const char* name = nullptr);
+    ~Directory();
+
+    /** The region drivers should attach to from now on. */
+    void publish(const std::string& regionName);
+
+    /** Drivers: the current region's name. False when inletd is not running. */
+    static bool current(std::string& regionName, std::string& error, const char* name = nullptr);
+
+private:
+    Directory() = default;
+    struct Data;
+    Data* data = nullptr;
+#if defined(_WIN32)
+    void* mapping = nullptr;
+#else
+    int fd = -1, lockFd = -1;
+    std::string posixName;
+#endif
+};
+
+} // namespace shm
+} // namespace inlet
+
+namespace inlet
+{
+namespace shm
+{
+/** A region name unique to this process and call: "Inlet.Shared.<pid>.<n>". */
+std::string uniqueRegionName();
 
 } // namespace shm
 } // namespace inlet

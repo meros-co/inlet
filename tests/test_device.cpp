@@ -25,11 +25,7 @@ using namespace inlet;
 
 static std::string regionName()
 {
-#if defined(_WIN32)
-    return "Local\\InletTest." + std::to_string(getpid());
-#else
-    return "/inlet.test." + std::to_string(getpid());
-#endif
+    return "InletTest." + std::to_string(getpid());
 }
 
 static void sharesAudio()
