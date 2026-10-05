@@ -1,137 +1,178 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 Meros Inc.
 //
-// Inlet: the settings app for inletd, the process that runs the AES67 virtual
-// sound card. A window (status, receivers, senders, settings) and a tray icon
+// Inlet: the app for inletd, the service that runs the AES67 virtual sound
+// card. A window (status, receivers, senders, settings, about) and a tray icon
 // that stays when the window closes. One instance: starting it again (as the
 // ASIO driver's control panel does) brings the window up.
 //
-//   Inlet.exe [--tray]      --tray: start with the window hidden (at sign-in)
+//   Inlet.exe [--tray]      --tray: start hidden (at sign-in), and start the
+//                           service if it is stopped
 
+#include "Assets.h"
+#include "InletLookAndFeel.h"
+#include "InletTheme.h"
 #include "InletdClient.h"
 #include "Pages.h"
+#include "Widgets.h"
 
 #include <JuceHeader.h>
+
+#if JUCE_WINDOWS
+#include <dwmapi.h>
+#pragma comment(lib, "dwmapi.lib")
+#endif
 
 namespace inlet::app
 {
 
+using namespace theme;
+
 namespace
 {
 
-/** The tray and window icon: a ring with an inward arrow, green when
-    receiving on a locked clock, amber otherwise, grey when inletd is away. */
-juce::Image makeIcon(int size, juce::Colour colour)
+/** True when the taskbar is light (Windows' "system" theme), so the tray icon
+    uses its dark-on-light drawing. */
+bool lightTaskbar()
 {
-    juce::Image img(juce::Image::ARGB, size, size, true);
-    juce::Graphics g(img);
-    const float s = (float) size;
-    g.setColour(colour);
-    g.drawEllipse(s * 0.08f, s * 0.08f, s * 0.84f, s * 0.84f, s * 0.1f);
-    juce::Path arrow;
-    arrow.startNewSubPath(s * 0.22f, s * 0.5f);
-    arrow.lineTo(s * 0.62f, s * 0.5f);
-    g.strokePath(arrow, juce::PathStrokeType(s * 0.1f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    juce::Path head;
-    head.addTriangle(s * 0.52f, s * 0.32f, s * 0.78f, s * 0.5f, s * 0.52f, s * 0.68f);
-    g.fillPath(head);
-    return img;
+#if JUCE_WINDOWS
+    return juce::WindowsRegistry::getValue(
+               "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize\\SystemUsesLightTheme", "0")
+               .getIntValue()
+        != 0;
+#else
+    return false;
+#endif
+}
+
+/** The programs using Inlet now ("Ableton Live, REAPER"), empty when none. */
+juce::StringArray programsUsingInlet(const InletdClient::Snapshot& s)
+{
+    juce::StringArray names;
+    const auto clients = s.status.getProperty("clients", {});
+    for (int i = 0; clients.isArray() && i < clients.size(); ++i)
+        names.addIfNotAlreadyThere(clients[i].getProperty("app", "").toString());
+    names.removeEmptyStrings();
+    return names;
+}
+
+/** An OK/Cancel question in the app's look; `then` runs on OK. */
+void confirm(const juce::String& title, const juce::String& text, const juce::String& okText, std::function<void()> then)
+{
+    auto* w = new juce::AlertWindow(title, text, juce::MessageBoxIconType::NoIcon);
+    w->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    w->addButton(okText, 1);
+    for (int i = 0; i < w->getNumButtons(); ++i)
+        if (auto* b = w->getButton(i))
+            InletLookAndFeel::setVariant(*b, i == 1 ? "primary" : "secondary");
+    w->enterModalState(true, juce::ModalCallbackFunction::create([then = std::move(then)](int r) {
+                           if (r == 1)
+                               then();
+                       }),
+                       true);
 }
 
 } // namespace
 
-class MainComponent : public juce::Component
+class MainComponent : public juce::Component, private juce::Timer
 {
 public:
-    explicit MainComponent(InletdClient& c)
-        : client(c), status(c), receivers(c), senders(c), settings(c), tabs(juce::TabbedButtonBar::TabsAtTop)
+    explicit MainComponent(InletdClient& c) : client(c), status(c), receivers(c), senders(c), settings(c), about(c)
     {
-        const auto bg = getLookAndFeel().findColour(juce::ResizableWindow::backgroundColourId);
-        tabs.addTab("Status", bg, &status, false);
-        tabs.addTab("Receivers", bg, &receivers, false);
-        tabs.addTab("Senders", bg, &senders, false);
-        tabs.addTab("Settings", bg, &settings, false);
-        tabs.addTab("About", bg, &about, false);
-        addAndMakeVisible(tabs);
-        banner.setJustificationType(juce::Justification::centredLeft);
-        banner.setFont(juce::FontOptions(15.0f));
-        addAndMakeVisible(banner);
-        setSize(900, 600);
+        addAndMakeVisible(sidebar);
+        pages = { &status, &receivers, &senders, &settings, &about };
+        for (auto* p : pages)
+            addChildComponent(p);
+        sidebar.onSelect = [this](int i) { show(i); };
+        status.onOpenPage = [this](int i) { show(i); };
+        show(0);
+        setSize(metric::windowW, metric::windowH);
     }
+
+    std::function<void()> onStart, onStop;
 
     void update(const InletdClient::Snapshot& s)
     {
-        for (Page* p : { (Page*) &status, (Page*) &receivers, (Page*) &senders, (Page*) &settings })
+        sidebar.update(s);
+        for (auto* p : pages)
             p->update(s);
-        if (!s.reachable)
-            setBanner(s.error, juce::Colour(0xffe57373));
-        else if (!message.isEmpty() && juce::Time::getMillisecondCounter() - messageAt < 8000)
-            setBanner(message, messageOk ? juce::Colour(0xff4caf50) : juce::Colour(0xffe57373));
-        else
-            setBanner({}, {});
     }
 
-    void actionDone(bool ok, const juce::String& text)
+    /** A message on the page in view, for 8 s. */
+    void showMessage(const juce::String& text, State s)
     {
-        message = ok ? juce::String("Done.") : text;
-        messageOk = ok;
-        messageAt = juce::Time::getMillisecondCounter();
-        setBanner(message, ok ? juce::Colour(0xff4caf50) : juce::Colour(0xffe57373));
-        client.pollNow();
+        for (auto* p : pages)
+            p->setMessage({}, State::Ok);
+        pages[current]->setMessage(text, s);
+        startTimer(8000);
+    }
+
+    void show(int page)
+    {
+        current = juce::jlimit(0, pages.size() - 1, page);
+        sidebar.setSelected(current);
+        for (int i = 0; i < pages.size(); ++i)
+            pages[i]->setVisible(i == current);
     }
 
     void resized() override
     {
         auto r = getLocalBounds();
-        if (banner.getText().isNotEmpty())
-            banner.setBounds(r.removeFromBottom(28).reduced(10, 2));
-        else
-            banner.setBounds({});
-        tabs.setBounds(r);
+        sidebar.setBounds(r.removeFromLeft(metric::sidebarW));
+        for (auto* p : pages)
+            p->setBounds(r);
     }
 
+    StatusPage& statusPage() { return status; }
+
 private:
-    void setBanner(const juce::String& text, juce::Colour colour)
+    void timerCallback() override
     {
-        if (banner.getText() == text)
-            return;
-        banner.setText(text, juce::dontSendNotification);
-        banner.setColour(juce::Label::textColourId, colour);
-        resized();
+        stopTimer();
+        for (auto* p : pages)
+            p->setMessage({}, State::Ok);
     }
 
     InletdClient& client;
+    Sidebar sidebar;
     StatusPage status;
     ReceiversPage receivers;
     SendersPage senders;
     SettingsPage settings;
     AboutPage about;
-    juce::TabbedComponent tabs;
-    juce::Label banner;
-    juce::String message;
-    bool messageOk = true;
-    juce::uint32 messageAt = 0;
+    juce::Array<Page*> pages;
+    int current = 0;
 };
 
 class MainWindow : public juce::DocumentWindow
 {
 public:
-    MainWindow(InletdClient& client)
-        : juce::DocumentWindow("Inlet", juce::Desktop::getInstance().getDefaultLookAndFeel().findColour(
-                                            juce::ResizableWindow::backgroundColourId),
-                               juce::DocumentWindow::allButtons)
+    explicit MainWindow(InletdClient& client) : juce::DocumentWindow("Inlet", colour::bg, juce::DocumentWindow::allButtons)
     {
         setUsingNativeTitleBar(true);
         content = new MainComponent(client);
         setContentOwned(content, true);
-        setResizable(true, true);
+        setResizable(true, false);
         setResizeLimits(720, 460, 4000, 3000);
         centreWithSize(getWidth(), getHeight());
-        setIcon(makeIcon(64, juce::Colour(0xff4caf50)));
+        setIcon(assets::appIcon(256));
     }
 
-    /** Closing hides it: the tray icon keeps Inlet's status in reach. */
+    /** Closing hides it: the tray icon keeps Inlet in reach. */
     void closeButtonPressed() override { setVisible(false); }
+
+    void visibilityChanged() override
+    {
+        juce::DocumentWindow::visibilityChanged();
+#if JUCE_WINDOWS
+        // A dark title bar, to match the window (Windows 10 2004 and later).
+        if (auto* peer = getPeer())
+        {
+            BOOL dark = TRUE;
+            DwmSetWindowAttribute((HWND) peer->getNativeHandle(), 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dark, sizeof(dark));
+        }
+#endif
+    }
 
     MainComponent* content = nullptr;
 };
@@ -139,34 +180,45 @@ public:
 class TrayIcon : public juce::SystemTrayIconComponent
 {
 public:
-    std::function<void()> onOpen, onQuit;
+    std::function<void()> onOpen, onStart, onStop, onQuitApp, onQuitAll;
+    bool running = false;
 
-    void setState(juce::Colour colour, const juce::String& tip)
+    void setState(const juce::String& state, const juce::String& tip)
     {
-        if (colour != shown)
+        const bool light = lightTaskbar();
+        if (state != shownState || light != shownLight)
         {
-            shown = colour;
-            setIconImage(makeIcon(32, colour), makeIcon(32, colour));
+            shownState = state;
+            shownLight = light;
+            const auto img = assets::trayIcon(state, light);
+            setIconImage(img, img);
         }
         setIconTooltip(tip);
     }
 
     void mouseDown(const juce::MouseEvent& e) override
     {
-        if (e.mods.isPopupMenu())
+        if (!e.mods.isPopupMenu())
         {
-            juce::PopupMenu m;
-            m.addItem("Open Inlet", [this] { if (onOpen) onOpen(); });
-            m.addSeparator();
-            m.addItem("Quit the Inlet app (the sound card keeps running)", [this] { if (onQuit) onQuit(); });
-            m.showMenuAsync({});
+            if (onOpen)
+                onOpen();
+            return;
         }
-        else if (onOpen)
-            onOpen();
+        juce::PopupMenu m;
+        m.addItem("Open Inlet", [this] { if (onOpen) onOpen(); });
+        if (running)
+            m.addItem("Stop Inlet", [this] { if (onStop) onStop(); });
+        else
+            m.addItem("Start Inlet", [this] { if (onStart) onStart(); });
+        m.addSeparator();
+        m.addItem("Quit the Inlet app\nThe sound card keeps running", [this] { if (onQuitApp) onQuitApp(); });
+        m.addItem("Quit Inlet completely\nStops the sound card until you start it again", [this] { if (onQuitAll) onQuitAll(); });
+        m.showMenuAsync(juce::PopupMenu::Options().withMinimumWidth(300));
     }
 
 private:
-    juce::Colour shown;
+    juce::String shownState;
+    bool shownLight = false;
 };
 
 class InletApplication : public juce::JUCEApplication
@@ -174,29 +226,71 @@ class InletApplication : public juce::JUCEApplication
 public:
     const juce::String getApplicationName() override { return "Inlet"; }
     const juce::String getApplicationVersion() override { return JUCE_APPLICATION_VERSION_STRING; }
-    bool moreThanOneInstanceAllowed() override { return false; }
+    bool moreThanOneInstanceAllowed() override
+    {
+#if JUCE_DEBUG
+        // A debug build beside an installed Inlet: Inlet.exe --dev
+        return getCommandLineParameters().contains("--dev");
+#else
+        return false;
+#endif
+    }
 
     void initialise(const juce::String& commandLine) override
     {
+        juce::LookAndFeel::setDefaultLookAndFeel(&lookAndFeel);
+#if JUCE_DEBUG
+        // A test inletd on another port: Inlet.exe --dev --port=8092
+        if (const auto p = commandLine.fromFirstOccurrenceOf("--port=", false, false); p.isNotEmpty())
+            InletdClient::port = p.getIntValue();
+#endif
+        tooltips = std::make_unique<juce::TooltipWindow>(nullptr, 600);
         client = std::make_unique<InletdClient>();
         window = std::make_unique<MainWindow>(*client);
         tray = std::make_unique<TrayIcon>();
-        tray->setState(juce::Colours::grey, "Inlet");
+        tray->setState("away", "Inlet");
         tray->onOpen = [this] { show(); };
-        tray->onQuit = [this] { systemRequestedQuit(); };
+        tray->onStart = [this] { start(); };
+        tray->onStop = [this] { stop(false); };
+        tray->onQuitApp = [this] { quit(); };
+        tray->onQuitAll = [this] { stop(true); };
+        window->content->statusPage().onStart = [this] { start(); };
+        window->content->statusPage().onStop = [this] { stop(false); };
+
         client->onSnapshot = [this](const InletdClient::Snapshot& s) {
+            last = s;
             window->content->update(s);
+            tray->running = s.reachable;
             const auto ptp = s.status.getProperty("ptp", {});
             if (!s.reachable)
-                tray->setState(juce::Colours::grey, "Inlet: the service is not running");
-            else if ((bool) ptp.getProperty("locked", false))
-                tray->setState(juce::Colour(0xff4caf50), "Inlet: locked to " + ptp.getProperty("gmIdentity", "").toString());
+                tray->setState("away", u8("Inlet: stopped"));
+            else if (ptp.getProperty("state", "").toString() == "locked")
+                tray->setState("locked", u8("Inlet: locked to the grandmaster"));
             else
-                tray->setState(juce::Colour(0xffffb74d), "Inlet: no PTP grandmaster (free-running)");
+                tray->setState("free", u8("Inlet: no grandmaster (free-running)"));
         };
-        client->onActionDone = [this](bool ok, const juce::String& text) { window->content->actionDone(ok, text); };
-        if (!commandLine.contains("--tray"))
+        client->onActionDone = [this](bool ok, const juce::String& text) {
+            window->content->showMessage(ok ? juce::String("Done.") : text, ok ? State::Ok : State::Bad);
+            client->pollNow();
+        };
+
+        if (commandLine.contains("--tray"))
+        {
+            // At sign-in: bring the sound card back if it was stopped (the
+            // service is set to start with Windows; this covers a stop since).
+            if (service::query() == service::Status::Stopped)
+            {
+                juce::String ignored;
+                service::start(ignored);
+            }
+        }
+        else
             show();
+#if JUCE_DEBUG
+        // Screenshots of a page in a debug build: Inlet.exe --dev --page=3
+        if (const auto page = commandLine.fromFirstOccurrenceOf("--page=", false, false); page.isNotEmpty())
+            window->content->show(page.getIntValue());
+#endif
     }
 
     void shutdown() override
@@ -204,6 +298,8 @@ public:
         tray.reset();
         window.reset();
         client.reset();
+        tooltips.reset();
+        juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
     }
 
     void anotherInstanceStarted(const juce::String& commandLine) override
@@ -222,9 +318,58 @@ private:
         client->pollNow();
     }
 
+    void start()
+    {
+        juce::String error;
+        if (service::start(error))
+            window->content->showMessage(u8("Starting Inlet\xe2\x80\xa6"), State::Ok);
+        else
+        {
+            window->content->showMessage(error, State::Bad);
+            show();
+        }
+        client->pollNow();
+    }
+
+    /** Stops the service (and, with `andQuit`, then the app), asking first when
+        programs are using Inlet: they lose the sound card. */
+    void stop(bool andQuit)
+    {
+        if (!last.reachable)
+        {
+            if (andQuit)
+                quit();
+            return;
+        }
+        const auto programs = programsUsingInlet(last);
+        auto go = [this, andQuit] {
+            client->request("POST", "/stop", {}, [this, andQuit](bool ok, const juce::String& text) {
+                if (andQuit && ok)
+                    return quit();
+                window->content->showMessage(ok ? juce::String("Inlet stopped.") : text, ok ? State::Ok : State::Bad);
+                if (!ok)
+                    show();
+                client->pollNow();
+            });
+        };
+        if (programs.isEmpty())
+            return go();
+        const auto list = programs.joinIntoString(", ");
+        if (!window->isVisible())
+            show();
+        confirm(andQuit ? "Quit Inlet completely?" : "Stop Inlet?",
+                list + (programs.size() == 1 ? " is" : " are") + u8(" using Inlet. Stopping it takes the sound card away: "
+                                                                   "audio stops, and Inlet\xe2\x80\x99s streams leave the network until you start it again.")
+                    + "\n\nAfterwards, reopen the device in " + (programs.size() == 1 ? "that program." : "those programs."),
+                andQuit ? "Quit completely" : "Stop Inlet", go);
+    }
+
+    InletLookAndFeel lookAndFeel;
+    std::unique_ptr<juce::TooltipWindow> tooltips;
     std::unique_ptr<InletdClient> client;
     std::unique_ptr<MainWindow> window;
     std::unique_ptr<TrayIcon> tray;
+    InletdClient::Snapshot last;
 };
 
 } // namespace inlet::app

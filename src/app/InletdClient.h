@@ -37,18 +37,22 @@ public:
     /** Message thread, when an action finishes: ok, and the server's reason when not. */
     std::function<void(bool ok, const juce::String& message)> onActionDone;
 
-    /** Queues a request ("PUT", "/receivers/1", body) to run after the current poll. */
-    void request(const juce::String& method, const juce::String& path, const juce::var& body = {});
+    using Done = std::function<void(bool ok, const juce::String& message)>;
+    /** Queues a request ("PUT", "/receivers/1", body) to run after the current
+        poll. `done`, when given, is called instead of onActionDone. */
+    void request(const juce::String& method, const juce::String& path, const juce::var& body = {}, Done done = {});
 
     void pollNow() { notify(); }
 
     static constexpr int kPort = 8091;
+    /** The port asked of inletd: kPort, or another for a debug build's tests. */
+    static inline int port = kPort;
 
 private:
     void run() override;
     bool call(const juce::String& method, const juce::String& path, const juce::String& body, int& status, juce::String& response);
 
-    struct Pending { juce::String method, path; juce::var body; };
+    struct Pending { juce::String method, path; juce::var body; Done done; };
     juce::CriticalSection lock;
     juce::Array<Pending> pending;
     std::shared_ptr<std::atomic<bool>> alive = std::make_shared<std::atomic<bool>>(true);

@@ -17,11 +17,11 @@ InletdClient::~InletdClient()
     stopThread(4000);
 }
 
-void InletdClient::request(const juce::String& method, const juce::String& path, const juce::var& body)
+void InletdClient::request(const juce::String& method, const juce::String& path, const juce::var& body, Done done)
 {
     {
         const juce::ScopedLock sl(lock);
-        pending.add({ method, path, body });
+        pending.add({ method, path, body, std::move(done) });
     }
     notify();
 }
@@ -29,7 +29,7 @@ void InletdClient::request(const juce::String& method, const juce::String& path,
 bool InletdClient::call(const juce::String& method, const juce::String& path, const juce::String& body, int& status,
                         juce::String& response)
 {
-    juce::URL url("http://127.0.0.1:" + juce::String(kPort) + "/inlet/v1" + path);
+    juce::URL url("http://127.0.0.1:" + juce::String(port) + "/inlet/v1" + path);
     if (body.isNotEmpty())
         url = url.withPOSTData(body);
     status = 0;
@@ -70,8 +70,12 @@ void InletdClient::run()
                 const auto parsed = juce::JSON::parse(response);
                 message = parsed.getProperty("error", response).toString();
             }
-            juce::MessageManager::callAsync([this, a = alive, ok, message] {
-                if (a->load() && onActionDone)
+            juce::MessageManager::callAsync([this, a = alive, ok, message, done = p.done] {
+                if (!a->load())
+                    return;
+                if (done)
+                    done(ok, message);
+                else if (onActionDone)
                     onActionDone(ok, message);
             });
         }
