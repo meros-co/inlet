@@ -68,8 +68,8 @@ Copy-Item "$PSScriptRoot\install.ps1", "$PSScriptRoot\uninstall.ps1", "$PSScript
 Copy-Item "$root\LICENSE" "$dist\LICENSE.txt"
 Copy-Item "$PSScriptRoot\THIRD-PARTY.txt" $dist
 New-Item -ItemType Directory -Force "$dist\licences" | Out-Null
-Copy-Item "$root\srcppssetsonts\Inter-OFL.txt" "$dist\licences\Inter-OFL.txt"
-Copy-Item "$root\srcppssets\icons\PHOSPHOR-LICENSE.txt" "$dist\licences\Phosphor-LICENSE.txt"
+Copy-Item "$root\src\app\assets\fonts\Inter-OFL.txt" "$dist\licences\Inter-OFL.txt"
+Copy-Item "$root\src\app\assets\icons\PHOSPHOR-LICENSE.txt" "$dist\licences\Phosphor-LICENSE.txt"
 
 $zip = Join-Path $root "dist\$name.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }
