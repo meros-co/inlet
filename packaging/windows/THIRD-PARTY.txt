@@ -1,0 +1,22 @@
+Inlet includes or links the following third-party software.
+
+Steinberg ASIO SDK 2.3.4 (interface headers, compiled into inlet_asio.dll)
+  Used under the GNU General Public License, version 3.
+  ASIO is a registered trademark of Steinberg Media Technologies GmbH.
+
+GStreamer 1.24+ (gstreamer, gstbase, gstnet, gst-ptp-helper) and GLib (glib, gobject,
+gio, gmodule), with libintl, libffi, PCRE2 and zlib
+  GNU Lesser General Public License, version 2.1 or later (GStreamer, GLib, libintl);
+  MIT (libffi), BSD (PCRE2), zlib licence (zlib).
+  Shipped as unmodified dynamic libraries from the official GStreamer MSVC build.
+  Source: https://gstreamer.freedesktop.org/src/ and https://download.gnome.org/sources/glib/
+  On request, Meros Inc. will provide the corresponding source for three years.
+
+libsamplerate 0.2.2 - BSD 2-Clause.
+nlohmann/json 3.11.3 - MIT.
+cpp-httplib 0.18.7 - MIT.
+JUCE 8 - used under the GNU Affero General Public License, version 3.
+meros-co/aes67 (libaes67, libmdns) - AGPL-3.0-only, Meros Inc.
+
+Microsoft Visual C++ runtime (vcruntime140.dll, vcruntime140_1.dll) - redistributed under
+the Microsoft Visual Studio redistribution terms.

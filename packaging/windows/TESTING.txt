@@ -1,0 +1,69 @@
+Inlet test build for Windows (unsigned)
+=======================================
+
+What this is: an AES67 virtual sound card. Your DAW sees an ASIO device called
+"Inlet"; its inputs are AES67 streams from the network and its outputs are sent
+to the network as AES67 streams. A Manifold console (or any NMOS controller,
+such as Sluice) can find and route it.
+
+Needs: Windows 10 22H2 or Windows 11, x64, a WIRED network interface on the
+AES67 network (Wi-Fi cannot carry the streams), and an ASIO host (REAPER,
+Cubase, Studio One, ...). A PTP grandmaster on the network for clock lock;
+without one, Inlet runs on the computer's own clock and says so.
+
+Install
+-------
+1. Unzip the folder anywhere.
+2. Double-click install.cmd and accept the administrator prompt. (Windows
+   SmartScreen may warn that the files are unsigned: "More info" -> "Run anyway".)
+3. The Inlet app opens. Its tray icon is green when PTP is locked, amber when
+   free-running, grey when the service is not running.
+
+Check
+-----
+- Inlet app, Status page: the network interface should be your wired AES67
+  interface. If not, choose it on the Settings page and press Apply.
+- Status page, Clock: "Locked to the grandmaster" when your network has one.
+- In your DAW, choose the ASIO device "Inlet". The Status page lists the DAW
+  under "Programs using Inlet". The DAW's ASIO control panel button opens the
+  Inlet app.
+
+Receive (network -> DAW)
+------------------------
+- From a console or Sluice: route a sender to an Inlet receiver ("Net In 1" ...).
+  Net In k's channels are DAW inputs (k-1)*8+1 ... k*8 by default.
+- Or in the Inlet app, Receivers page: pick a stream (heard by SAP or NMOS, or
+  pasted with "Add an SDP..."), select a receiver, "Play on this receiver".
+
+Send (DAW -> network)
+---------------------
+- DAW outputs 1-8 go out as "Net Out 1", 9-16 as "Net Out 2", and so on,
+  announced by SAP and NMOS. Route them from the console or Sluice.
+
+Loopback self-test (no other device needed)
+-------------------------------------------
+1. Close your DAW (one program writes Inlet's outputs at a time).
+2. Inlet app, Receivers page: select "Net In 1", choose the stream "Net Out 1",
+   "Play on this receiver".
+3. In a command prompt in the installed folder (C:\Program Files\Inlet\tools):
+     inlet-asio-loopback.exe ..\inlet_asio.dll 15 128
+   It should end with "PASS: every sample came back, at one fixed latency".
+
+Where things are
+----------------
+- Program:   C:\Program Files\Inlet
+- Settings:  C:\ProgramData\Inlet\inletd.json   (kept on uninstall)
+- Log:       C:\ProgramData\Inlet\inletd.log
+- Service:   "Inlet" (inletd) in services.msc
+- API:       http://127.0.0.1:8091/inlet/v1/status (and NMOS at /x-nmos/)
+
+Uninstall
+---------
+Double-click uninstall.cmd in C:\Program Files\Inlet (or in this folder).
+
+Known limits of this build
+--------------------------
+- 48 kHz (or the rate set in Settings) only: the DAW must run at the network's rate.
+- One program writes Inlet's outputs at a time (the first to start).
+- 32-sample ASIO buffers may click; 64 and above are recommended.
+- macOS is not in this build.
