@@ -27,6 +27,7 @@ else()
     message(WARNING "GStreamer (gstreamer-net-1.0 >= 1.24) not found: inletd needs it for PTP")
 endif()
 
+add_subdirectory(src/inletd)
 add_subdirectory(tools)
 
 if(BUILD_TESTING)
