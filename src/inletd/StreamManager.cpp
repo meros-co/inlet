@@ -665,15 +665,23 @@ bool StreamManager::subscribeToStream(int receiver, const std::string& streamId,
     std::string sdp, senderId;
     {
         std::lock_guard<std::mutex> g(lock);
-        auto it = streams.find(streamId);
-        if (it == streams.end())
+        if (streamId.rfind("own:", 0) == 0)
+        {
+            const int k = std::atoi(streamId.c_str() + 4);
+            if (k >= 1 && k <= (int) tx.size() && tx[(size_t) k - 1].txSlot >= 0)
+                sdp = makeSdp(tx[(size_t) k - 1]);
+        }
+        else if (auto it = streams.find(streamId); it != streams.end())
+        {
+            sdp = it->second.sdp;
+            if (it->second.via == "nmos")
+                senderId = streamId.substr(5);
+        }
+        if (sdp.empty())
         {
             error = "no such stream";
             return false;
         }
-        sdp = it->second.sdp;
-        if (it->second.via == "nmos")
-            senderId = streamId.substr(5);
     }
     if (!subscribeReceiver(receiver, sdp, senderId, error))
         return false;
@@ -704,6 +712,16 @@ nlohmann::json StreamManager::streamsJson() const
             j["description"] = describeSdp(p);
         }
         out.push_back(j);
+    }
+    // This computer's own senders, so a stream can be looped back for testing.
+    for (auto& snd : tx)
+    {
+        if (snd.txSlot < 0)
+            continue;
+        out.push_back({ { "id", "own:" + std::to_string(snd.index) }, { "name", snd.label }, { "via", "this computer" },
+                        { "sdp", makeSdp(snd) }, { "channelLabels", nlohmann::json::array() }, { "channels", snd.channels },
+                        { "sampleRate", cfg.sampleRate }, { "encoding", "L24" }, { "group", snd.group },
+                        { "description", std::to_string(snd.channels) + " ch, " + std::to_string(cfg.sampleRate / 1000.0).substr(0, 4) + " kHz, L24" } });
     }
     return out;
 }

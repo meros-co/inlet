@@ -1861,6 +1861,13 @@ void NmosNode::crawlPeers()
     {
         work.error = std::string("unreadable answer: ") + e.what();
     }
+    if (ok && work.nodeId == cfg.nodeId)
+    {
+        // Ourselves, advertised on another of this computer's addresses: not a peer.
+        std::lock_guard<std::mutex> g(lock);
+        peers.erase(std::remove_if(peers.begin(), peers.end(), [&](const Peer& p) { return p.href == work.href; }), peers.end());
+        return;
+    }
     std::vector<std::string> keep;
     {
         std::lock_guard<std::mutex> g(lock);
