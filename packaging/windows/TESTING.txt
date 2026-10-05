@@ -16,8 +16,11 @@ Install
 1. Unzip the folder anywhere.
 2. Double-click install.cmd and accept the administrator prompt. (Windows
    SmartScreen may warn that the files are unsigned: "More info" -> "Run anyway".)
-3. The Inlet app opens. Its tray icon is green when PTP is locked, amber when
-   free-running, grey when the service is not running.
+3. The Inlet app opens. Its tray icon (the Inlet mark) has a green dot when PTP
+   is locked, amber when free-running, grey when Inlet is stopped.
+   Installing over an earlier build is fine (settings are kept), and is needed
+   once for the app's "Start Inlet" button to work: earlier builds did not let
+   a signed-in user start the service.
 
 Check
 -----
@@ -39,6 +42,24 @@ Send (DAW -> network)
 ---------------------
 - DAW outputs 1-8 go out as "Net Out 1", 9-16 as "Net Out 2", and so on,
   announced by SAP and NMOS. Route them from the console or Sluice.
+
+Start, Stop and quitting
+------------------------
+- Status page, "Stop Inlet" (top right), or the tray menu's "Stop Inlet": the
+  service (inletd) quits. Inlet's senders leave the network (SAP deletions,
+  NMOS deregistration and an mDNS goodbye), its receivers stop, and a DAW
+  using Inlet is asked to reset; reopening the device fails until Inlet is
+  started again. If a DAW is using Inlet, the app asks first.
+- Status page, "Start Inlet" (shown while stopped), or the tray menu's "Start
+  Inlet": the service starts and the app reconnects within a few seconds.
+  Reopen the ASIO device in the DAW (or restart its audio engine).
+- Tray menu, "Quit the Inlet app": the window and tray icon go; the sound card
+  keeps running. Start "Inlet" from the Start menu to bring the app back.
+- Tray menu, "Quit Inlet completely": stops the service as above, then quits
+  the app. Inlet comes back when you open the Inlet app and press "Start
+  Inlet", at your next sign-in (the app starts in the tray and starts the
+  service), or when Windows restarts (the service starts with Windows).
+- Closing the window only hides it; the tray icon stays.
 
 Loopback self-test (no other device needed)
 -------------------------------------------
