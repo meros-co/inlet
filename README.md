@@ -7,8 +7,8 @@ receives AES67 audio as if the network were a local audio interface.
 - **macOS:** a Core Audio driver (AudioServerPlugIn), available to every application.
 - **Clocking:** Inlet follows the network's PTP grandmaster. Its audio clock *is* the AES67
   media clock, so streams on the same grandmaster play and send without resampling or drift.
-- **Discovery and routing:** SAP/SDP and NMOS (IS-04, IS-05, IS-08), so any NMOS controller,
-  and a [Manifold](https://github.com/meros-co) console as a first-party device, can route it.
+- **Discovery and routing:** SAP/SDP and NMOS (IS-04, IS-05, IS-08), so any NMOS controller
+  or console can route it.
 
 <img src="third_party/asiosdk/logo/ASIO-compatible-logo-Steinberg-TM-BW.png" alt="ASIO Compatible" width="120"/>
 
