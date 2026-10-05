@@ -12,6 +12,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(CTest)
+include(cmake/Dependencies.cmake)
 
 # Shared AES67 and mDNS libraries, vendored until meros-co/aes67 is published.
 add_subdirectory(third_party/manifold-libs/aes67)
