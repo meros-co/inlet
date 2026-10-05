@@ -29,6 +29,7 @@
 #    define NOMINMAX
 #  endif
 #  include <windows.h>
+#  include <sddl.h>
 #endif
 
 namespace
@@ -186,6 +187,19 @@ int installService(bool install)
         {
             SERVICE_DESCRIPTIONW d { const_cast<wchar_t*>(L"Inlet AES67 virtual sound card: PTP, streams and NMOS for the Inlet driver") };
             ChangeServiceConfig2W(svc, SERVICE_CONFIG_DESCRIPTION, &d);
+            // Windows' default rights, plus start and stop (RP, WP) for the
+            // signed-in user (IU): the app's Start Inlet, and starting it again
+            // at sign-in, without administrator rights.
+            PSECURITY_DESCRIPTOR sd = nullptr;
+            if (ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                    L"D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWRPWPLOCRRC;;;IU)"
+                    L"(A;;CCLCSWLOCRRC;;;SU)",
+                    SDDL_REVISION_1, &sd, nullptr))
+            {
+                if (!SetServiceObjectSecurity(svc, DACL_SECURITY_INFORMATION, sd))
+                    std::fprintf(stderr, "inletd: could not let users start the service (error %lu)\n", GetLastError());
+                LocalFree(sd);
+            }
             StartServiceW(svc, 0, nullptr);
             CloseServiceHandle(svc);
         }
