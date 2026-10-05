@@ -573,6 +573,13 @@ void Engine::Impl::routes()
         if (owner->onRestart)
             owner->onRestart(next);
     });
+    http.Post("/inlet/v1/stop", [this, local](const httplib::Request& req, httplib::Response& res) {
+        if (!local(req, res))
+            return;
+        sendJson(res, 202, { { "stopping", true } });
+        if (owner->onStop)
+            owner->onStop();
+    });
     http.Get("/inlet/v1/interfaces", [local](const httplib::Request& req, httplib::Response& res) {
         if (!local(req, res))
             return;

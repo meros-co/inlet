@@ -39,6 +39,8 @@ std::condition_variable gWake;
 bool gQuit = false;
 bool gRestart = false;
 inlet::Config gPending;
+/** Set in service mode: tells the SCM a stop the app asked for is under way. */
+void (*gStopPending)() = nullptr;
 
 void requestQuit()
 {
@@ -84,6 +86,12 @@ int runDaemon(const std::string& configPath)
                 gRestart = true;
             }
             gWake.notify_all();
+        };
+        engine.onStop = [] {
+            std::fprintf(stderr, "inletd: stopping, as the Inlet app asked\n");
+            if (gStopPending)
+                gStopPending();
+            requestQuit();
         };
         if (!engine.start(error))
         {
@@ -146,6 +154,7 @@ void WINAPI serviceMain(DWORD, LPWSTR*)
     std::freopen(log.c_str(), "a", stderr);
     std::setvbuf(stderr, nullptr, _IONBF, 0);
     setStatus(SERVICE_RUNNING);
+    gStopPending = [] { setStatus(SERVICE_STOP_PENDING); };
     runDaemon(gConfigPath);
     setStatus(SERVICE_STOPPED);
 }

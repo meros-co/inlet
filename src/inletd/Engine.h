@@ -17,7 +17,8 @@
  *   GET/POST /inlet/v1/streams, DELETE /inlet/v1/streams/{id},
  *   GET /inlet/v1/receivers, PUT/DELETE /inlet/v1/receivers/{k},
  *   GET /inlet/v1/senders, PUT /inlet/v1/senders/{k},
- *   GET /inlet/v1/nmos, POST/DELETE /inlet/v1/peers
+ *   GET /inlet/v1/nmos, POST/DELETE /inlet/v1/peers,
+ *   POST /inlet/v1/stop (the app's Stop Inlet: the whole process quits)
  *
  * A settings change that alters the device's shape (channels, rate,
  * interface) needs the engine rebuilt: `onRestart` asks the owner to do it.
@@ -57,6 +58,9 @@ public:
     /** Called (on an API thread) with new settings, saved already, that need
         the engine rebuilt; the owner stops this engine and starts another. */
     std::function<void(const Config&)> onRestart;
+    /** Called (on an API thread, after the reply) when the app asks Inlet to
+        stop: the owner stops this engine and quits. */
+    std::function<void()> onStop;
 
     nlohmann::json status() const;
 
