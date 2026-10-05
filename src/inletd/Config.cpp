@@ -80,7 +80,9 @@ bool Config::applySettings(const nlohmann::json& j, std::string& error)
 uint32_t Config::linkOffsetFrames() const
 {
 #if defined(_WIN32)
-    const uint32_t us = linkOffsetUs ? linkOffsetUs : 2000;
+    // 2 ms left too little margin for 1 ms packets and Windows scheduling in
+    // end-to-end tests; 3 ms ran clean.
+    const uint32_t us = linkOffsetUs ? linkOffsetUs : 3000;
 #else
     const uint32_t us = linkOffsetUs ? linkOffsetUs : 1000;
 #endif
