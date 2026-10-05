@@ -11,6 +11,11 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Drivers load into other people's processes: no C runtime to install.
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 include(CTest)
 include(cmake/Dependencies.cmake)
 
@@ -28,6 +33,9 @@ else()
 endif()
 
 add_subdirectory(src/inletd)
+if(WIN32)
+    add_subdirectory(src/asio)
+endif()
 add_subdirectory(tools)
 
 if(BUILD_TESTING)
