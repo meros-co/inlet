@@ -24,6 +24,7 @@ Inlet is in early development and is not yet usable.
 CMake 3.24 or later and a C11/C++20 compiler.
 
 ```
+git submodule update --init
 cmake -S . -B build
 cmake --build build
 ctest --test-dir build

@@ -19,9 +19,9 @@ endif()
 include(CTest)
 include(cmake/Dependencies.cmake)
 
-# Shared AES67 and mDNS libraries, vendored until meros-co/aes67 is published.
-add_subdirectory(third_party/manifold-libs/aes67)
-add_subdirectory(third_party/manifold-libs/mdns)
+# The shared AES67 and mDNS libraries (meros-co/aes67), a git submodule:
+# `git submodule update --init`. Targets meros::aes67 and meros::mdns.
+add_subdirectory(third_party/meros-aes67)
 
 add_subdirectory(src/core)
 

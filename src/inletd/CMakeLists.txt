@@ -15,7 +15,7 @@ add_library(inletd_lib STATIC
     StreamManager.cpp
 )
 target_include_directories(inletd_lib PUBLIC .)
-target_link_libraries(inletd_lib PUBLIC inlet_core manifold::mdns nlohmann_json::nlohmann_json httplib::httplib)
+target_link_libraries(inletd_lib PUBLIC inlet_core meros::mdns nlohmann_json::nlohmann_json httplib::httplib)
 if(TARGET inlet_ptp)
     target_link_libraries(inletd_lib PUBLIC inlet_ptp)
     target_compile_definitions(inletd_lib PRIVATE INLET_HAVE_PTP=1)
