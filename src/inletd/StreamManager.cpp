@@ -6,14 +6,13 @@
 #include "Ids.h"
 #include "Sap.h"
 
-#include <algorithm>
-#include <chrono>
-#include <cstring>
-
-// Last: libaes67's C atomics shim defines macros the standard headers trip on.
 #include <aes67/rtp.h>
 #include <aes67/rx.h>
 #include <aes67/sdp.h>
+
+#include <algorithm>
+#include <chrono>
+#include <cstring>
 
 namespace inlet
 {
@@ -79,7 +78,7 @@ std::string describeSdp(const aes67_sdp_t& s)
     return std::to_string(s.channels) + " ch, " + std::to_string(s.sample_rate / 1000.0).substr(0, 4) + " kHz, " + s.encoding;
 }
 
-StreamManager::StreamManager(shm::Region& r, NetRx& rxIn, NetTx& txIn, Sap* sapIn, const Settings& settings)
+StreamManager::StreamManager(shm::Region& r, aes67_netrx_t* rxIn, NetTx& txIn, Sap* sapIn, const Settings& settings)
     : region(r), netRx(rxIn), netTx(txIn), sap(sapIn), cfg(settings)
 {
     auto& h = region.header();
@@ -197,7 +196,7 @@ bool StreamManager::validateSdp(const std::string& text, aes67_sdp_t& s, std::st
         return false;
     }
     uint32_t group = 0;
-    if (!parseIpv4(s.connection_ip, group))
+    if (!aes67_parse_ipv4(s.connection_ip, &group))
     {
         error = std::string("the stream's address is not IPv4: ") + s.connection_ip;
         return false;
@@ -215,9 +214,9 @@ bool StreamManager::openReceiver(Receiver& r, std::string& error)
     const uint32_t maxCh = region.header().receiverChannels;
     const uint32_t rate = s.sample_rate ? s.sample_rate : cfg.sampleRate;
     uint32_t group = 0, source = 0;
-    parseIpv4(s.connection_ip, group);
+    aes67_parse_ipv4(s.connection_ip, &group);
     if (s.source_ip[0] != '\0')
-        parseIpv4(s.source_ip, source);
+        aes67_parse_ipv4(s.source_ip, &source);
 
     // On our grandmaster at our rate: straight into the device's rings. Anything
     // else is bridged onto the device's clock.
@@ -227,13 +226,13 @@ bool StreamManager::openReceiver(Receiver& r, std::string& error)
     for (uint32_t c = 0; c < maxCh; ++c)
         aes67_ring_init(deviceRings + c);
 
-    RxStreamConfig rc;
+    aes67_netrx_stream_cfg_t rc {};
     rc.group = group;
     rc.source = source;
     rc.port = s.port;
-    rc.payloadType = s.payload_type;
+    rc.payload_type = s.payload_type;
     rc.format = (uint8_t) fmt;
-    rc.channels = s.channels;
+    rc.channels = (uint16_t) s.channels;
     if (r.bridged)
     {
         r.staging.reset(new aes67_ring_t[s.channels]);
@@ -249,16 +248,18 @@ bool StreamManager::openReceiver(Receiver& r, std::string& error)
         bc.leadFrames = cfg.sampleRate * 2 / 1000;
         r.bridge = std::make_unique<RateBridge>(bc);
         rc.rings = r.staging.get();
-        rc.mediaClockOffset = 0;   // the bridge does not care where the sender's clock starts
+        rc.media_clock_offset = 0;   // the bridge does not care where the sender's clock starts
     }
     else
     {
         rc.rings = deviceRings;
-        rc.mediaClockOffset = s.mediaclk_direct ? (uint32_t) s.mediaclk_offset : 0;
+        rc.media_clock_offset = s.mediaclk_direct ? (uint32_t) s.mediaclk_offset : 0;
     }
-    r.rxSlot = netRx.addStream(rc, error);
+    char err[160] = { 0 };
+    r.rxSlot = aes67_netrx_add_stream(netRx, &rc, err, sizeof err);
     if (r.rxSlot < 0)
     {
+        error = err;
         r.bridge.reset();
         r.staging.reset();
         return false;
@@ -271,7 +272,7 @@ bool StreamManager::openReceiver(Receiver& r, std::string& error)
 void StreamManager::closeReceiver(Receiver& r)
 {
     if (r.rxSlot >= 0)
-        netRx.removeStream(r.rxSlot);
+        aes67_netrx_remove_stream(netRx, r.rxSlot);
     r.rxSlot = -1;
     r.bridge.reset();
     r.staging.reset();
@@ -393,7 +394,7 @@ std::string StreamManager::makeSdp(const Sender& s) const
 bool StreamManager::openSender(Sender& s, std::string& error)
 {
     uint32_t group = 0;
-    if (!parseIpv4(s.group, group))
+    if (!aes67_parse_ipv4(s.group.c_str(), &group))
     {
         error = "bad sender group " + s.group;
         return false;
@@ -747,15 +748,23 @@ nlohmann::json StreamManager::receiversJson() const
                                   { "latencyFrames", region.header().linkOffsetFrames.load() }, { "bridged", false } };
         if (r.active)
         {
-            const RxStreamStats st = netRx.stats(r.rxSlot);
+            aes67_netrx_stats_t st {};
+            aes67_netrx_get_stats(netRx, r.rxSlot, &st);
             j["stream"] = { { "name", r.sdp.session_name }, { "id", r.streamId }, { "senderId", r.senderId },
                             { "channels", r.sdp.channels }, { "sampleRate", r.sdp.sample_rate }, { "group", r.sdp.connection_ip } };
-            health["receiving"] = st.lastArrivalMono != 0 && now - st.lastArrivalMono < 1'000'000'000LL;
+            // Receiving while the packet count moves: the library times
+            // arrivals on its own monotonic clock, not on ours.
+            if (st.packets != r.seenPackets)
+            {
+                r.seenPackets = st.packets;
+                r.seenMovingMono = now;
+            }
+            health["receiving"] = st.packets != 0 && now - r.seenMovingMono < 1'000'000'000LL;
             health["packets"] = st.packets;
             health["lost"] = st.lost;
             health["reordered"] = st.reordered;
-            health["wrongPayload"] = st.wrongPayload;
-            health["jitterWorstNs"] = st.jitterWorstNs;
+            health["wrongPayload"] = st.wrong_pt;
+            health["jitterWorstNs"] = st.jitter_worst_ns;
             health["bridged"] = r.bridged;
             if (r.bridge)
             {

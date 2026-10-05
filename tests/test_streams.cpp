@@ -75,7 +75,8 @@ static void streams()
     free.ptpNs = 1'780'000'000'000'000'000LL;
     region->clock().publish(free);
 
-    auto rx = NetRx::open("", err);
+    char rxErr[160] = { 0 };
+    std::unique_ptr<aes67_netrx_t, decltype(&aes67_netrx_close)> rx(aes67_netrx_open("", rxErr, sizeof rxErr), aes67_netrx_close);
     auto tx = NetTx::openDetached(region->clock(), [](int, uint32_t, uint16_t, const uint8_t*, size_t) {});
     CHECK(rx && tx);
     if (!rx || !tx)
@@ -85,7 +86,7 @@ static void streams()
     ss.ifaceMac = "e0-d4-e8-78-37-fa";
     ss.senders = 4;
     ss.senderChannels = 8;
-    StreamManager m(*region, *rx, *tx, nullptr, ss);
+    StreamManager m(*region, rx.get(), *tx, nullptr, ss);
     m.start();
 
     // Senders: as many as the outputs hold, contiguous, named, grouped.
@@ -172,7 +173,7 @@ static void streams()
     const auto state = m.persistentState();
     CHECK_EQ(state["receivers"].size(), 2u);
     m.stop();
-    StreamManager again(*region, *rx, *tx, nullptr, ss);
+    StreamManager again(*region, rx.get(), *tx, nullptr, ss);
     again.restoreState(state);
     CHECK(again.receivers()[1].active);
     CHECK(again.receivers()[1].senderId == "abc");

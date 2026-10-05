@@ -9,7 +9,6 @@
 #include "StreamManager.h"
 
 #include "inlet/ClockDiscipline.h"
-#include "inlet/NetRx.h"
 #include "inlet/NetTx.h"
 #include "inlet/SharedRegion.h"
 #if defined(INLET_HAVE_PTP)
@@ -83,7 +82,11 @@ struct Engine::Impl
 
     NetInterface iface;
     std::unique_ptr<shm::Region> region;
-    std::unique_ptr<NetRx> netRx;
+    struct NetRxClose
+    {
+        void operator()(aes67_netrx_t* r) const { aes67_netrx_close(r); }
+    };
+    std::unique_ptr<aes67_netrx_t, NetRxClose> netRx;
     std::unique_ptr<NetTx> netTx;
     std::unique_ptr<Sap> sap;
     std::unique_ptr<StreamManager> streams;
@@ -173,13 +176,19 @@ bool Engine::start(std::string& error)
     d.ptpReason = "this build of Inlet has no PTP follower";
 #endif
 
-    d.netRx = NetRx::open(d.iface.ipv4, error);
-    if (!d.netRx)
-        return false;
+    {
+        char err[160] = { 0 };
+        d.netRx.reset(aes67_netrx_open(d.iface.ipv4.c_str(), err, sizeof err));
+        if (!d.netRx)
+        {
+            error = err;
+            return false;
+        }
+    }
     d.netTx = NetTx::open(d.iface.ipv4, d.region->clock(), error);
     if (!d.netTx)
         return false;
-    d.netRx->start();
+    aes67_netrx_start(d.netRx.get());
     d.netTx->start();
 
     d.sap = std::make_unique<Sap>(d.iface.ipv4);
@@ -198,7 +207,7 @@ bool Engine::start(std::string& error)
     ss.senders = c.senders;
     ss.senderChannels = c.senderChannels;
     ss.linkOffsetFrames = c.linkOffsetFrames();
-    d.streams = std::make_unique<StreamManager>(*d.region, *d.netRx, *d.netTx, d.sap.get(), ss);
+    d.streams = std::make_unique<StreamManager>(*d.region, d.netRx.get(), *d.netTx, d.sap.get(), ss);
     if (d.sap)
         d.sap->onHeard = [&d](const std::string& key, const std::string& sdp) { d.streams->sapHeard(key, sdp); };
 

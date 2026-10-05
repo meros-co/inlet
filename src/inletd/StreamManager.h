@@ -24,11 +24,11 @@
 #include "NodeModel.h"
 
 #include "inlet/Clock.h"
-#include "inlet/NetRx.h"
 #include "inlet/NetTx.h"
 #include "inlet/RateBridge.h"
 #include "inlet/SharedRegion.h"
 
+#include <aes67/netrx.h>
 #include <nlohmann/json.hpp>
 
 #include <atomic>
@@ -64,7 +64,7 @@ public:
         std::string labelPrefix = "Net";
     };
 
-    StreamManager(shm::Region& region, NetRx& rx, NetTx& tx, Sap* sap, const Settings& settings);
+    StreamManager(shm::Region& region, aes67_netrx_t* rx, NetTx& tx, Sap* sap, const Settings& settings);
 
     /** The stream rates a receiver plays: the device's own directly, the rest
         through the rate bridge (tested converting into 48 kHz). */
@@ -122,6 +122,9 @@ private:
         std::string sdpText, senderId, streamId;
         aes67_sdp_t sdp {};
         int rxSlot = -1;
+        // When its packet count last moved (status calls).
+        mutable uint64_t seenPackets = 0;
+        mutable int64_t seenMovingMono = 0;
         bool bridged = false;
         std::unique_ptr<aes67_ring[]> staging;     // the bridge's input, when bridged
         std::unique_ptr<RateBridge> bridge;
@@ -161,7 +164,7 @@ private:
     void changed();
 
     shm::Region& region;
-    NetRx& netRx;
+    aes67_netrx_t* netRx;
     NetTx& netTx;
     Sap* sap;
     Settings cfg;

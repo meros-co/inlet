@@ -2,7 +2,9 @@
 // Copyright (c) 2026 Meros Inc.
 
 #include "inlet/NetTx.h"
-#include "inlet/NetRx.h"
+
+#include <aes67/netrx.h>
+#include <aes67/rtp.h>
 
 #include <algorithm>
 #include <chrono>
@@ -36,9 +38,6 @@
 #    include <sys/qos.h>
 #  endif
 #endif
-
-// Last: libaes67's C atomics shim defines macros the standard headers trip on.
-#include <aes67/rtp.h>
 
 namespace inlet
 {
@@ -297,7 +296,7 @@ std::unique_ptr<NetTx> NetTx::open(const std::string& ifaceIp, const ClockMap& c
 {
     auto impl = std::make_unique<Impl>(clock);
     uint32_t iface = 0;
-    if (!ifaceIp.empty() && !parseIpv4(ifaceIp, iface))
+    if (!ifaceIp.empty() && !aes67_parse_ipv4(ifaceIp.c_str(), &iface))
     {
         error = "bad interface address " + ifaceIp;
         return nullptr;

@@ -3,16 +3,16 @@
 
 #include "check.h"
 #include "inlet/Clock.h"
-#include "inlet/NetRx.h"
 #include "inlet/NetTx.h"
+
+#include <aes67/netrx.h>
+#include <aes67/rtp.h>
 
 #include <chrono>
 #include <memory>
 #include <string>
 #include <thread>
 #include <vector>
-
-#include <aes67/rtp.h>
 
 using namespace inlet;
 
@@ -159,23 +159,26 @@ static void loopsBackThroughTheWire()
     map.publish(c);
 
     std::string err;
-    auto rx = NetRx::open("127.0.0.1", err);
+    char rxErr[160] = { 0 };
+    std::unique_ptr<aes67_netrx_t, decltype(&aes67_netrx_close)> rx(aes67_netrx_open("127.0.0.1", rxErr, sizeof rxErr),
+                                                                     aes67_netrx_close);
     auto tx = NetTx::open("127.0.0.1", map, err);
     CHECK(rx && tx);
     if (!rx || !tx)
         return;
     uint32_t group = 0;
-    parseIpv4("239.69.201.1", group);
+    aes67_parse_ipv4("239.69.201.1", &group);
 
     auto txRings = makeRings(2), rxRings = makeRings(2);
-    RxStreamConfig rc;
+    aes67_netrx_stream_cfg_t rc {};
+    rc.payload_type = 96;
     rc.group = group;
     rc.port = 15006;
     rc.channels = 2;
     rc.rings = rxRings.get();
-    if (rx->addStream(rc, err) < 0)
+    if (aes67_netrx_add_stream(rx.get(), &rc, rxErr, sizeof rxErr) < 0)
     {
-        std::fprintf(stderr, "SKIPPED loopsBackThroughTheWire: %s\n", err.c_str());
+        std::fprintf(stderr, "SKIPPED loopsBackThroughTheWire: %s\n", rxErr);
         return;
     }
     TxStreamConfig tc;
@@ -193,12 +196,12 @@ static void loopsBackThroughTheWire()
         aes67_ring_write(&txRings[0], (uint32_t) i, (int32_t) (i & 0x7FFFF));
         aes67_ring_write(&txRings[1], (uint32_t) i, -(int32_t) (i & 0x7FFFF));
     }
-    rx->start();
+    aes67_netrx_start(rx.get());
     tx->start();
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     tx->stop();
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    rx->stop();
+    aes67_netrx_stop(rx.get());
 
     // A sample well inside what was sent arrived at its own index.
     const uint64_t probe = now + 3000;

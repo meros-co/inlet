@@ -7,7 +7,6 @@
 add_library(inlet_core STATIC
     src/Clock.cpp
     src/ClockDiscipline.cpp
-    src/NetRx.cpp
     src/NetTx.cpp
     src/RateBridge.cpp
     src/SharedRegion.cpp
