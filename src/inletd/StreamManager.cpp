@@ -784,12 +784,20 @@ nlohmann::json StreamManager::sendersJson() const
                              { "firstOutput", s.firstOutput }, { "group", s.group }, { "port", s.port },
                              { "ptimeUs", s.ptimeUs }, { "enabled", s.enabled } };
         // Sender health: on the wire or not, and packets sent (silent ones
-        // included: no host was writing).
-        nlohmann::json health = { { "sending", s.txSlot >= 0 }, { "packets", 0 }, { "silentPackets", 0 }, { "skipped", 0 },
+        // included: no host was writing). Open but not sending (every send
+        // failing, as on a saturated Wi-Fi link) is not "sending".
+        nlohmann::json health = { { "sending", false }, { "packets", 0 }, { "silentPackets", 0 }, { "skipped", 0 },
                                   { "sendErrors", 0 } };
         if (s.txSlot >= 0)
         {
             const TxStreamStats st = netTx.stats(s.txSlot);
+            const auto now = std::chrono::steady_clock::now();
+            if (st.packets != s.seenPackets || s.seenMoving == std::chrono::steady_clock::time_point {})
+            {
+                s.seenPackets = st.packets;
+                s.seenMoving = now;
+            }
+            health["sending"] = now - s.seenMoving < std::chrono::seconds(3);
             health["packets"] = st.packets;
             health["silentPackets"] = st.silentPackets;
             health["skipped"] = st.skipped;

@@ -32,6 +32,7 @@
 #include <nlohmann/json.hpp>
 
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <map>
 #include <memory>
@@ -137,6 +138,9 @@ private:
         bool enabled = true;
         int txSlot = -1;
         uint32_t ptimeUs = 1000;
+        // When its packet count last moved (status calls): "sending" means on the wire.
+        mutable uint64_t seenPackets = 0;
+        mutable std::chrono::steady_clock::time_point seenMoving {};
     };
     struct Stream
     {
