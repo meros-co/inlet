@@ -190,6 +190,12 @@ bool StreamManager::validateSdp(const std::string& text, aes67_sdp_t& s, std::st
         error = "the stream has " + std::to_string(s.channels) + " channels; each receiver takes up to " + std::to_string(maxCh);
         return false;
     }
+    const uint32_t rate = s.sample_rate ? s.sample_rate : cfg.sampleRate;
+    if (std::find(std::begin(kReceiveRates), std::end(kReceiveRates), (int) rate) == std::end(kReceiveRates))
+    {
+        error = "the stream is " + std::to_string(rate) + " Hz; Inlet plays 44.1, 48, 88.2 and 96 kHz streams";
+        return false;
+    }
     uint32_t group = 0;
     if (!parseIpv4(s.connection_ip, group))
     {

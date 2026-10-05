@@ -215,6 +215,7 @@ bool Engine::start(std::string& error)
     nc.interfaceName = d.iface.name;
     nc.chassisId = d.iface.mac;
     nc.sampleRate = (int) c.sampleRate;
+    nc.receiveRates.assign(std::begin(StreamManager::kReceiveRates), std::end(StreamManager::kReceiveRates));
     nc.services = nlohmann::json::array({ { { "href", "http://" + d.iface.ipv4 + ":" + std::to_string(c.apiPort) + "/inlet/v1" },
                                             { "type", kServiceType } } });
     nc.tags = { { "urn:x-manifold:product", nlohmann::json::array({ "inlet" }) },

@@ -65,6 +65,7 @@ public:
         std::string chassisId;          ///< MAC as xx-xx-xx-xx-xx-xx
         bool advertise = true;          ///< mDNS; off for tests
         int sampleRate = 48000;
+        std::vector<int> receiveRates;  ///< rates receivers play (empty: sampleRate only)
         /** IS-04 services ({ href, type }) and tags, as the node publishes them. */
         nlohmann::json services = nlohmann::json::array();
         nlohmann::json tags = nlohmann::json::object();

@@ -164,7 +164,10 @@ static void nodeApi()
     const auto self = get(node, "/x-nmos/node/v1.3/self");
     CHECK(self["services"][0]["type"] == "urn:x-manifold:service:inlet/v1");
     CHECK(self["tags"]["urn:x-manifold:product"][0] == "inlet");
-    CHECK_EQ(get(node, "/x-nmos/node/v1.3/receivers").size(), 2u);
+    const auto rxs = get(node, "/x-nmos/node/v1.3/receivers");
+    CHECK_EQ(rxs.size(), 2u);
+    CHECK(rxs[0]["caps"]["media_types"].size() == 3);
+    CHECK(rxs[0]["caps"]["media_types"][2] == "audio/AM824");
     const auto senders = get(node, "/x-nmos/node/v1.3/senders");
     CHECK_EQ(senders.size(), 1u);
     CHECK(senders[0]["id"] == NmosNode::senderId(config().deviceId, 1));

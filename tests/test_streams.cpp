@@ -110,6 +110,18 @@ static void streams()
     CHECK(rjson[1]["health"]["bridged"] == true);
     CHECK_EQ(m.receivers()[1].channels, 4);
 
+    // Another rate the bridge plays is accepted (and bridged); one it does not is refused.
+    std::string at96 = kForeignSdp;
+    at96.replace(at96.find("L24/48000/4"), 11, "L24/96000/4");
+    at96.replace(at96.find("239.69.77.1"), 11, "239.69.77.9");   // not receiver 2's stream
+    CHECK(m.subscribeReceiver(1, at96, "", err));
+    CHECK(m.receiversJson()[0]["health"]["bridged"] == true);
+    std::string at32 = kForeignSdp;
+    at32.replace(at32.find("L24/48000/4"), 11, "L24/32000/4");
+    CHECK(!m.subscribeReceiver(1, at32, "", err));
+    CHECK(err.find("32000") != std::string::npos);
+    CHECK(m.subscribeReceiver(1, sdp, "", err));
+
     // Too many channels for a slot: refused, with the reason.
     std::string big = kForeignSdp;
     big.replace(big.find("L24/48000/4"), 11, "L24/48000/16");

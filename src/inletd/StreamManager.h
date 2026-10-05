@@ -64,6 +64,10 @@ public:
     };
 
     StreamManager(shm::Region& region, NetRx& rx, NetTx& tx, Sap* sap, const Settings& settings);
+
+    /** The stream rates a receiver plays: the device's own directly, the rest
+        through the rate bridge (tested converting into 48 kHz). */
+    static constexpr int kReceiveRates[] = { 44100, 48000, 88200, 96000 };
     ~StreamManager() override;
 
     void start();

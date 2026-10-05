@@ -355,9 +355,14 @@ nlohmann::json NmosNode::resource(const std::string& type, int index) const
         j["transport"] = kTransport;
         j["interface_bindings"] = nlohmann::json::array({ cfg.interfaceName });
         j["format"] = kFormatAudio;
-        j["caps"] = { { "media_types", nlohmann::json::array({ "audio/L24", "audio/L16" }) },
+        // What the receiver really plays: the three encodings, and every rate
+        // the rate bridge converts (the device's own needs no conversion).
+        auto rates = nlohmann::json::array();
+        for (int rate : cfg.receiveRates.empty() ? std::vector<int> { cfg.sampleRate } : cfg.receiveRates)
+            rates.push_back({ { "numerator", rate } });
+        j["caps"] = { { "media_types", nlohmann::json::array({ "audio/L24", "audio/L16", "audio/AM824" }) },
                       { "constraint_sets", nlohmann::json::array({ {
-                            { "urn:x-nmos:cap:format:sample_rate", { { "enum", nlohmann::json::array({ { { "numerator", cfg.sampleRate } } }) } } },
+                            { "urn:x-nmos:cap:format:sample_rate", { { "enum", rates } } },
                             { "urn:x-nmos:cap:format:channel_count", { { "maximum", r.maxChannels } } } } }) } };
         // Observed truth, which a controller trusts over its own record.
         j["subscription"] = { { "sender_id", r.active && !r.senderId.empty() ? nlohmann::json(r.senderId) : nlohmann::json(nullptr) },

@@ -161,5 +161,7 @@ int main()
     expectLocked("48k, sender +300 ppm", run(48000, 48000, 300.0, 90), 300.0);
     expectLocked("48k, sender -300 ppm", run(48000, 48000, -300.0, 90), -300.0);
     expectLocked("44.1k into 48k", run(44100, 48000, 0.0, 90), 0.0);
+    expectLocked("88.2k into 48k", run(88200, 48000, 0.0, 90), 0.0);
+    expectLocked("96k into 48k", run(96000, 48000, 0.0, 90), 0.0);
     TEST_MAIN_END();
 }
