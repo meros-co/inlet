@@ -18,6 +18,7 @@
 
 #include <httplib.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -357,10 +358,11 @@ void Engine::Impl::persist()
 
 nlohmann::json Engine::Impl::ptpJson() const
 {
-    // The shape of Manifold's ptp_update, so a console reads it as its own.
+    // The shape of Manifold's ptp_update without its `type` key, so a console
+    // reads it as its own.
     ClockSample s;
     region->clock().read(s);
-    nlohmann::json j = { { "type", "ptp_update" }, { "source", "gstreamer" }, { "domain", config.ptpDomain },
+    nlohmann::json j = { { "source", "gstreamer" }, { "domain", config.ptpDomain },
                          { "expectedDomain", config.ptpDomain }, { "expectedProfile", "aes67" }, { "utcOffsetS", 37 },
                          { "locked", s.state == ClockState::Locked }, { "state", stateName(s.state) },
                          { "epoch", s.epoch } };
@@ -412,12 +414,18 @@ nlohmann::json Engine::Impl::status() const
 {
     const auto clients = clientsJson();
     uint32_t buffer = 0;
-    auto hosts = nlohmann::json::array();
+    // The spec's string lists: the programs using Inlet, and the drivers
+    // they came through. The detail is under `clients`.
+    auto hosts = nlohmann::json::array(), drivers = nlohmann::json::array();
     for (auto& c : clients)
     {
         if (c.value("running", false) && buffer == 0)
             buffer = c.value("bufferFrames", 0u);
         hosts.push_back(c.value("app", std::string()));
+        const std::string kind = c.value("kind", std::string());
+        const std::string name = kind == "asio" ? "ASIO" : kind == "coreaudio" ? "Core Audio" : kind;
+        if (std::find(drivers.begin(), drivers.end(), name) == drivers.end())
+            drivers.push_back(name);
     }
     auto receivers = streams->receiversJson();
     for (auto& r : receivers)
@@ -429,7 +437,7 @@ nlohmann::json Engine::Impl::status() const
              { "interface", { { "name", iface.name }, { "ip", iface.ipv4 }, { "mac", iface.mac } } },
              { "sampleRate", config.sampleRate }, { "bufferSize", buffer }, { "inputs", config.inputs },
              { "outputs", config.outputs }, { "linkOffsetFrames", region->header().linkOffsetFrames.load() },
-             { "drivers", clients }, { "hosts", hosts }, { "ptp", ptpJson() },
+             { "drivers", drivers }, { "hosts", hosts }, { "clients", clients }, { "ptp", ptpJson() },
              { "sap", { { "announcing", sap != nullptr }, { "listening", sap != nullptr && sap->listening() }, { "warning", sapWarning } } },
              { "receivers", receivers }, { "senders", senders },
              { "nmos", { { "nodeId", config.nodeId }, { "deviceId", config.deviceId } } } };

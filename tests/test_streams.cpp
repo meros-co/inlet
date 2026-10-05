@@ -128,6 +128,27 @@ static void streams()
     CHECK(std::string(region->outputLabel(1)) == "Mix R");
     CHECK(m.senders()[0].channelLabels[0] == "Mix L");
 
+    // Each PUT replaces the whole set: a receiver left out loses its names.
+    nlohmann::json fewer = { { "receivers", nlohmann::json::array() },
+                             { "senders", { { { "id", "s1" }, { "channels", { "", "Mix R" } } } } } };
+    CHECK(m.applyLabels(
+        fewer, [](const std::string& id) { return id == "r2" ? 2 : 0; }, [](const std::string& id) { return id == "s1" ? 1 : 0; },
+        err));
+    CHECK(m.deviceInputLabels()[8] == "Input 9");
+    CHECK(std::string(region->outputLabel(0)).empty());
+    CHECK(std::string(region->outputLabel(1)) == "Mix R");
+    // Re-apply the first set for what follows.
+    m.applyLabels(
+        labels, [](const std::string& id) { return id == "r2" ? 2 : 0; }, [](const std::string& id) { return id == "s1" ? 1 : 0; },
+        err);
+
+    // Health in the spec's shape, present for idle slots too.
+    for (const char* key : { "receiving", "packets", "lost", "reordered", "wrongPayload", "jitterWorstNs", "resyncs", "underruns",
+                             "latencyFrames" })
+        CHECK(m.receiversJson()[0]["health"].contains(key));
+    CHECK(m.sendersJson()[0]["health"]["sending"] == true);
+    CHECK(m.sendersJson()[0]["health"].contains("packets"));
+
     // The map refuses what does not exist, all or nothing.
     CHECK(!m.setInputMap({ { 0, { 3, 0 } } }, err));
     CHECK(m.setInputMap({ { 0, { 2, 3 } }, { 1, { 0, 0 } } }, err));

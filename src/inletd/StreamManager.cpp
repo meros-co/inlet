@@ -532,11 +532,12 @@ bool StreamManager::applyLabels(const nlohmann::json& body, const std::function<
         error = "the body must be an object of receivers and senders";
         return false;
     }
+    // Each PUT replaces the whole set: what it does not name is unnamed.
     std::vector<std::string> ins, outs;
     {
         std::lock_guard<std::mutex> g(lock);
-        ins = inputLabels;
-        outs = outputLabels;
+        ins.assign(inputLabels.size(), {});
+        outs.assign(outputLabels.size(), {});
     }
     const auto map = inputMap();
     // A receiver's channel names land on every device input that plays it.
@@ -715,23 +716,35 @@ nlohmann::json StreamManager::receiversJson() const
     for (auto& r : rx)
     {
         nlohmann::json j = { { "index", r.index }, { "label", r.label }, { "active", r.active }, { "error", r.error } };
+        // The health fields Manifold publishes for its own receivers (the
+        // "Manifold <-> Inlet" spec), always present; zeros while idle.
+        nlohmann::json health = { { "receiving", false }, { "packets", 0 }, { "lost", 0 }, { "reordered", 0 },
+                                  { "wrongPayload", 0 }, { "jitterWorstNs", 0 }, { "resyncs", 0 }, { "underruns", 0 },
+                                  { "latencyFrames", region.header().linkOffsetFrames.load() }, { "bridged", false } };
         if (r.active)
         {
             const RxStreamStats st = netRx.stats(r.rxSlot);
             j["stream"] = { { "name", r.sdp.session_name }, { "id", r.streamId }, { "senderId", r.senderId },
                             { "channels", r.sdp.channels }, { "sampleRate", r.sdp.sample_rate }, { "group", r.sdp.connection_ip } };
-            nlohmann::json health = { { "receiving", st.lastArrivalMono != 0 && now - st.lastArrivalMono < 1'000'000'000LL },
-                                      { "packets", st.packets }, { "lost", st.lost }, { "reordered", st.reordered },
-                                      { "wrongPayload", st.wrongPayload }, { "jitterWorstNs", st.jitterWorstNs },
-                                      { "bridged", r.bridged } };
+            health["receiving"] = st.lastArrivalMono != 0 && now - st.lastArrivalMono < 1'000'000'000LL;
+            health["packets"] = st.packets;
+            health["lost"] = st.lost;
+            health["reordered"] = st.reordered;
+            health["wrongPayload"] = st.wrongPayload;
+            health["jitterWorstNs"] = st.jitterWorstNs;
+            health["bridged"] = r.bridged;
             if (r.bridge)
             {
+                // Through the rate bridge: its restarts and dry spells, and the
+                // fill it holds on top of the link offset.
                 const auto b = r.bridge->stats();
-                health["bridge"] = { { "driftPpm", b.driftPpm }, { "underruns", b.underruns }, { "resets", b.resets },
-                                     { "tracking", b.tracking } };
+                health["resyncs"] = b.resets;
+                health["underruns"] = b.underruns;
+                health["latencyFrames"] = region.header().linkOffsetFrames.load() + (int64_t) cfg.sampleRate * 5 / 1000;
+                health["bridge"] = { { "driftPpm", b.driftPpm }, { "tracking", b.tracking } };
             }
-            j["health"] = health;
         }
+        j["health"] = health;
         out.push_back(j);
     }
     return out;
@@ -745,13 +758,20 @@ nlohmann::json StreamManager::sendersJson() const
     {
         nlohmann::json j = { { "index", s.index }, { "label", s.label }, { "channels", s.channels },
                              { "firstOutput", s.firstOutput }, { "group", s.group }, { "port", s.port },
-                             { "ptimeUs", s.ptimeUs }, { "enabled", s.enabled }, { "sending", s.txSlot >= 0 } };
+                             { "ptimeUs", s.ptimeUs }, { "enabled", s.enabled } };
+        // Sender health: on the wire or not, and packets sent (silent ones
+        // included: no host was writing).
+        nlohmann::json health = { { "sending", s.txSlot >= 0 }, { "packets", 0 }, { "silentPackets", 0 }, { "skipped", 0 },
+                                  { "sendErrors", 0 } };
         if (s.txSlot >= 0)
         {
             const TxStreamStats st = netTx.stats(s.txSlot);
-            j["health"] = { { "packets", st.packets }, { "silentPackets", st.silentPackets }, { "skipped", st.skipped },
-                            { "sendErrors", st.sendErrors } };
+            health["packets"] = st.packets;
+            health["silentPackets"] = st.silentPackets;
+            health["skipped"] = st.skipped;
+            health["sendErrors"] = st.sendErrors;
         }
+        j["health"] = health;
         out.push_back(j);
     }
     return out;
