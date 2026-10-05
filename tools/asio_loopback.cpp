@@ -12,6 +12,7 @@
 // samples that are, the ones that are not, and the silent ones.
 //
 //   inlet-asio-loopback <inlet_asio.dll> [seconds] [buffer]
+//   inlet-asio-loopback <inlet_asio.dll> --control-panel     (opens the Inlet app, as a host's ASIO button does)
 
 #ifndef NOMINMAX
 #  define NOMINMAX
@@ -27,6 +28,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 #include <map>
 #include <thread>
 #include <vector>
@@ -125,6 +127,15 @@ int main(int argc, char** argv)
         gDriver->getErrorMessage(msg);
         std::fprintf(stderr, "init failed: %s\n", msg);
         return 1;
+    }
+    // What a host's "ASIO settings" button does: open the Inlet app.
+    if (argc > 2 && std::string(argv[2]) == "--control-panel")
+    {
+        const ASIOError e = gDriver->controlPanel();
+        std::printf(e == ASE_OK ? "control panel opened\n" : "control panel failed (%ld)\n", (long) e);
+        gDriver->Release();
+        factory->Release();
+        return e == ASE_OK ? 0 : 1;
     }
     for (int c = 0; c < kChannels; ++c)
         gBuffers.push_back({ ASIOTrue, c, { nullptr, nullptr } });
