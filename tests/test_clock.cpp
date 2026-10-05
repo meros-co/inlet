@@ -4,11 +4,10 @@
 #include "check.h"
 #include "inlet/Clock.h"
 
+#include <aes67/rtp.h>
+
 #include <atomic>
 #include <thread>
-
-// Last: libaes67's C atomics shim defines macros the standard headers trip on.
-#include <aes67/rtp.h>
 
 using namespace inlet;
 

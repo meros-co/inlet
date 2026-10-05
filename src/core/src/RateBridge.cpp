@@ -3,13 +3,12 @@
 
 #include "inlet/RateBridge.h"
 
+#include <aes67/rtp.h>
+
 #include <algorithm>
 #include <cmath>
 
 #include <samplerate.h>
-
-// Last: libaes67's C atomics shim defines macros the standard headers trip on.
-#include <aes67/rtp.h>
 
 namespace inlet
 {

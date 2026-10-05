@@ -3,6 +3,8 @@
 
 #include "inlet/SharedRegion.h"
 
+#include <aes67/rtp.h>
+
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -22,9 +24,6 @@
 #  include <sys/stat.h>
 #  include <unistd.h>
 #endif
-
-// Last: libaes67's C atomics shim defines macros the standard headers trip on.
-#include <aes67/rtp.h>
 
 namespace inlet::shm
 {

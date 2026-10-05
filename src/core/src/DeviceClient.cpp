@@ -4,6 +4,8 @@
 #include "inlet/DeviceClient.h"
 #include "inlet/NetTx.h"
 
+#include <aes67/rtp.h>
+
 #include <algorithm>
 #include <cstring>
 
@@ -20,9 +22,6 @@
 #    include <sys/qos.h>
 #  endif
 #endif
-
-// Last: libaes67's C atomics shim defines macros the standard headers trip on.
-#include <aes67/rtp.h>
 
 namespace inlet
 {
