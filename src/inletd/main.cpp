@@ -20,6 +20,7 @@
 #include <csignal>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <mutex>
 #include <string>
 
@@ -140,6 +141,8 @@ void WINAPI serviceMain(DWORD, LPWSTR*)
         return;
     // A service has no console: what it says goes to a log beside the settings.
     const std::string log = gConfigPath.substr(0, gConfigPath.find_last_of("\\/") + 1) + "inletd.log";
+    std::error_code ec;
+    std::filesystem::create_directories(std::filesystem::path(gConfigPath).parent_path(), ec);
     std::freopen(log.c_str(), "a", stderr);
     std::setvbuf(stderr, nullptr, _IONBF, 0);
     setStatus(SERVICE_RUNNING);
@@ -160,8 +163,11 @@ int installService(bool install)
     {
         wchar_t path[MAX_PATH] = {};
         GetModuleFileNameW(nullptr, path, MAX_PATH);
+        // Quoted: "C:\Program Files\..." would otherwise be read as C:\Program.
+        const std::wstring command = L"\"" + std::wstring(path) + L"\"";
         SC_HANDLE svc = CreateServiceW(scm, kServiceName, L"Inlet", SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS,
-                                       SERVICE_AUTO_START, SERVICE_ERROR_NORMAL, path, nullptr, nullptr, nullptr, nullptr, nullptr);
+                                       SERVICE_AUTO_START, SERVICE_ERROR_NORMAL, command.c_str(), nullptr, nullptr, nullptr,
+                                       nullptr, nullptr);
         if (svc == nullptr)
         {
             std::fprintf(stderr, "inletd: could not install the service (error %lu)\n", GetLastError());

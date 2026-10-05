@@ -11,6 +11,16 @@
 #include <gst/gst.h>
 #include <gst/net/gstptpclock.h>
 
+#if defined(_WIN32)
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  include <windows.h>
+#  define G_OS_HELPER_SUFFIX ".exe"
+#else
+#  define G_OS_HELPER_SUFFIX ""
+#endif
+
 namespace inlet
 {
 
@@ -147,7 +157,31 @@ std::unique_ptr<PtpFollower> PtpFollower::open(int domain, const std::vector<std
         return nullptr;
     }
     if (!gst_is_initialized())
+    {
+        // Installed, Inlet carries GStreamer's PTP helper beside its own
+        // executable rather than in a GStreamer installation.
+        if (g_getenv("GST_PTP_HELPER_1_0") == nullptr)
+        {
+            gchar* self = g_file_read_link("/proc/self/exe", nullptr);   // Linux; null elsewhere
+#if defined(_WIN32)
+            wchar_t path[MAX_PATH] = {};
+            GetModuleFileNameW(nullptr, path, MAX_PATH);
+            g_free(self);
+            self = g_utf16_to_utf8(reinterpret_cast<const gunichar2*>(path), -1, nullptr, nullptr, nullptr);
+#endif
+            if (self != nullptr)
+            {
+                gchar* dir = g_path_get_dirname(self);
+                gchar* helper = g_build_filename(dir, "gst-ptp-helper" G_OS_HELPER_SUFFIX, nullptr);
+                if (g_file_test(helper, G_FILE_TEST_IS_EXECUTABLE))
+                    g_setenv("GST_PTP_HELPER_1_0", helper, TRUE);
+                g_free(helper);
+                g_free(dir);
+                g_free(self);
+            }
+        }
         gst_init(nullptr, nullptr);
+    }
 
     auto impl = std::make_unique<Impl>();
     impl->domain = domain;
