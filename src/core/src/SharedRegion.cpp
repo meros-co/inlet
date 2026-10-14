@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <new>
 #include <random>
@@ -35,6 +36,23 @@ constexpr size_t align64(size_t n) { return (n + 63) & ~(size_t) 63; }
 
 constexpr const char* kDefaultRegion = "Inlet.Shared";
 constexpr const char* kDirectoryName = "Inlet.Directory";
+
+/** The directory's name: Inlet's own, or INLET_DIRECTORY's, which lets a test
+    run a private inletd and driver beside an installed Inlet. */
+std::string directoryName(const char* given)
+{
+    if (given != nullptr)
+        return given;
+#if defined(_WIN32)
+    char env[128] = {};
+    if (GetEnvironmentVariableA("INLET_DIRECTORY", env, sizeof env) > 0)
+        return env;
+#else
+    if (const char* env = std::getenv("INLET_DIRECTORY"); env != nullptr && *env != '\0')
+        return env;
+#endif
+    return kDirectoryName;
+}
 constexpr uint32_t kDirectoryMagic = 0x52444C49;   // "ILDR"
 
 struct Offsets
@@ -349,7 +367,7 @@ struct Directory::Data
 
 std::unique_ptr<Directory> Directory::create(std::string& error, const char* nameIn)
 {
-    const std::string name = nameIn != nullptr ? nameIn : kDirectoryName;
+    const std::string name = directoryName(nameIn);
     std::unique_ptr<Directory> d(new Directory());
     void* base = nullptr;
 #if defined(_WIN32)
@@ -439,7 +457,7 @@ void Directory::publish(const std::string& regionName)
 
 bool Directory::current(std::string& regionName, std::string& error, const char* nameIn)
 {
-    const std::string name = nameIn != nullptr ? nameIn : kDirectoryName;
+    const std::string name = directoryName(nameIn);
     void* base = nullptr;
 #if defined(_WIN32)
     HANDLE h = openMapping(name);

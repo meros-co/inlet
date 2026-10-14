@@ -25,7 +25,9 @@
  *
  * The directory is how drivers find the current region: a small mapping with a
  * fixed name that holds the region's name. inletd holds it for as long as it
- * runs, which also makes it the guard against a second inletd.
+ * runs, which also makes it the guard against a second inletd. Tests rename it
+ * with the INLET_DIRECTORY environment variable, so they never meet an
+ * installed Inlet.
  *
  * Windows: named file mappings, under "Global\" (the service has the
  * privilege) or "Local\" when inletd runs in a user session for development.

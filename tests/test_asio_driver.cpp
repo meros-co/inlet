@@ -92,6 +92,10 @@ int main(int argc, char** argv)
     layout.receivers = 1;
     layout.receiverChannels = 2;
     // As inletd does: the directory, then a region of its own name, published.
+    // A directory of the test's own (the driver, loaded below, inherits the
+    // name), so an Inlet installed on this computer is never the one found.
+    const std::string directoryName = "Inlet.Directory.Test." + std::to_string(GetCurrentProcessId());
+    SetEnvironmentVariableA("INLET_DIRECTORY", directoryName.c_str());
     auto directory = shm::Directory::create(err);
     const std::string regionName = shm::uniqueRegionName();
     auto region = directory ? shm::Region::create(layout, err, regionName.c_str()) : nullptr;
