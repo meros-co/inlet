@@ -417,8 +417,8 @@ void StatusPage::paintOffline(juce::Graphics& g)
         text = u8("The sound card\xe2\x80\x99s service is running but not answering yet. This window reconnects on its own.");
         break;
     default:
-        text = u8("The sound card is stopped, so audio software can\xe2\x80\x99t use Inlet and nothing is on the network. "
-                  "Start it here; programs that had Inlet open need to reopen it.");
+        text = u8("The sound card is stopped: programs using Inlet hear silence and nothing is on the network. "
+                  "Start it here; they carry on by themselves.");
         break;
     }
     g.setColour(colour::n400);

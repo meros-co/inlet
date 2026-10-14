@@ -358,9 +358,10 @@ private:
         if (!window->isVisible())
             show();
         confirm(andQuit ? "Quit Inlet completely?" : "Stop Inlet?",
-                list + (programs.size() == 1 ? " is" : " are") + u8(" using Inlet. Stopping it takes the sound card away: "
+                list + (programs.size() == 1 ? " is" : " are") + u8(" using Inlet. Stopping it silences the sound card: "
                                                                    "audio stops, and Inlet\xe2\x80\x99s streams leave the network until you start it again.")
-                    + "\n\nAfterwards, reopen the device in " + (programs.size() == 1 ? "that program." : "those programs."),
+                    + "\n\n" + (programs.size() == 1 ? "That program keeps" : "Those programs keep")
+                    + " the device open and carry on when Inlet starts.",
                 andQuit ? "Quit completely" : "Stop Inlet", go);
     }
 
