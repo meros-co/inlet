@@ -9,6 +9,7 @@ add_library(inlet_core STATIC
     src/ClockDiscipline.cpp
     src/NetTx.cpp
     src/RateBridge.cpp
+    src/RateConverter.cpp
     src/SharedRegion.cpp
     src/DeviceClient.cpp
 )
