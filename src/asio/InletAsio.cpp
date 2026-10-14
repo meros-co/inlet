@@ -23,6 +23,8 @@ namespace
 
 constexpr long kDriverVersion = 2;
 constexpr int64_t kReattachEveryNs = 500'000'000;
+/** Channels (both ways) x rate up to which the converters use medium quality. */
+constexpr uint64_t kMediumQualityWork = 128ull * 48000;
 constexpr float kFrom24 = 1.0f / 8388608.0f;
 constexpr float kFrom32 = 1.0f / 2147483648.0f;
 
@@ -355,10 +357,16 @@ void InletAsio::buildConversions()
     for (int i = 0; i < (int) channels.size(); ++i)
         (channels[(size_t) i].isInput ? inputs : outputs).channels.push_back(i);
     const long frames = bufferFrames;
+    // libsamplerate's medium sinc where it costs little; its fastest (still a
+    // band-limited sinc) where the channels and the rate would make the
+    // medium one take a good part of a core: about 64 channels each way at
+    // 48 kHz, or 16 at 192.
+    const uint64_t work = (uint64_t) channels.size() * std::max(rate(), deviceRate());
+    const int quality = work <= kMediumQualityWork ? 1 : 2;
     if (!inputs.channels.empty())
     {
         const int n = (int) inputs.channels.size();
-        inputs.conv = std::make_unique<RateConverter>(deviceRate(), rate(), n);
+        inputs.conv = std::make_unique<RateConverter>(deviceRate(), rate(), n, quality);
         // Device frames per offer: a period's worth at the ratio, and slack.
         const long cap = (long) std::ceil(frames / inputs.conv->ratio()) + (long) inputs.conv->leadFrames() + 64;
         inputs.in.assign((size_t) cap * n, 0.0f);
@@ -368,7 +376,7 @@ void InletAsio::buildConversions()
     if (!outputs.channels.empty())
     {
         const int n = (int) outputs.channels.size();
-        outputs.conv = std::make_unique<RateConverter>(rate(), deviceRate(), n);
+        outputs.conv = std::make_unique<RateConverter>(rate(), deviceRate(), n, quality);
         const long cap = (long) std::ceil(frames * outputs.conv->ratio()) + 64;
         outputs.in.assign((size_t) frames * n, 0.0f);
         outputs.out.assign((size_t) cap * n, 0.0f);
