@@ -55,6 +55,30 @@ static void sap()
     bare.insert(bare.end(), body.begin(), body.end());
     CHECK(sapDecode(bare.data(), bare.size(), q));
     CHECK(q.payload == body);
+
+    // Our own announcements are recognised by session, not by address:
+    // another AES67 program on this computer announces from it too.
+    Sap here("192.168.0.1");   // not started: announcing only records
+    here.announce("own:1", p.payload);
+    SapPacket echo;
+    echo.origin = 0x0100A8C0;
+    echo.hash = here.hashOf("own:1");
+    echo.payload = p.payload;
+    CHECK(echo.hash != 0);
+    CHECK(here.announcedHere(echo));
+    SapPacket neighbour = echo;
+    neighbour.hash = (uint16_t) (echo.hash + 1);
+    neighbour.payload = "v=0\r\ns=another program\r\n";
+    CHECK(!here.announcedHere(neighbour));
+    neighbour.hash = echo.hash;   // the same hash by chance, another session
+    CHECK(!here.announcedHere(neighbour));
+    SapPacket goodbye = echo;
+    goodbye.deletion = true;
+    goodbye.payload.clear();
+    CHECK(here.announcedHere(goodbye));
+    SapPacket elsewhere = echo;
+    elsewhere.origin = 0x0200A8C0;   // 192.168.0.2
+    CHECK(!here.announcedHere(elsewhere));
 }
 
 static void streams()

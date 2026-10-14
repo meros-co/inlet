@@ -63,6 +63,12 @@ public:
     void announce(const std::string& id, const std::string& sdp);
     void withdraw(const std::string& id);
 
+    /** One of this Inlet's own announcements (heard back), as opposed to
+        another program's, even from the same address. */
+    bool announcedHere(const SapPacket& p) const;
+    /** The message hash a session of ours is announced with; 0 if none. */
+    uint16_t hashOf(const std::string& id) const;
+
     /** Called on the SAP thread: a session was announced or deleted (sdp empty). */
     std::function<void(const std::string& key, const std::string& sdp)> onHeard;
 

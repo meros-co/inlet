@@ -231,6 +231,27 @@ void Sap::withdraw(const std::string& id)
         sendNow(id, o.sdp, true);
 }
 
+bool Sap::announcedHere(const SapPacket& p) const
+{
+    // Our own announcements come back to us. Another AES67 program on this
+    // computer announces from the same address, so it is our sessions that
+    // are recognised, not the address.
+    if (p.origin != ifaceAddr)
+        return false;
+    std::lock_guard<std::mutex> g(lock);
+    for (auto& [id, session] : ours)
+        if (session.hash == p.hash && (p.deletion || session.sdp == p.payload))
+            return true;
+    return false;
+}
+
+uint16_t Sap::hashOf(const std::string& id) const
+{
+    std::lock_guard<std::mutex> g(lock);
+    auto it = ours.find(id);
+    return it != ours.end() ? it->second.hash : 0;
+}
+
 void Sap::sendNow(const std::string& id, const std::string& sdp, bool deletion)
 {
     SapPacket p;
@@ -298,7 +319,7 @@ void Sap::run()
                 oa.s_addr = p.origin;
                 inet_ntop(AF_INET, &oa, o, sizeof o);
                 const std::string key = std::string(o) + "/" + std::to_string(p.hash);
-                if (p.origin != ifaceAddr || ifaceAddr == 0)   // not our own
+                if (!announcedHere(p))
                     onHeard(key, p.deletion ? std::string() : p.payload);
             }
         }
