@@ -363,16 +363,21 @@ void StatusPage::paintOnline(juce::Graphics& g)
             auto x = row.reduced(4, 0);
             g.setColour(colour::text);
             g.setFont(assets::font(type::table));
-            g.drawText(str(c, "app"), x.removeFromLeft(juce::jmax(160, x.getWidth() / 3)), juce::Justification::centredLeft, true);
+            g.drawText(str(c, "app"), x.removeFromLeft(juce::jmax(150, x.getWidth() / 4)), juce::Justification::centredLeft, true);
             const bool running = (bool) c.getProperty("running", false);
             const auto late = (juce::int64) c.getProperty("lateWakeups", 0);
             drawStateLabel(g, x.removeFromLeft(170), !running ? State::Idle : (late > 0 ? State::Warn : State::Ok),
                            !running ? "open, not running"
                                     : (late > 0 ? juce::String(late) + (late == 1 ? " late buffer" : " late buffers") : "running"));
+            // The program's own rate, when Inlet converts for it.
+            const int hostRate = (int) c.getProperty("sampleRate", 0);
+            const int deviceRate = (int) st.getProperty("sampleRate", 0);
+            juce::String detail = str(c, "bufferFrames") + " frames";
+            if (hostRate != 0 && hostRate != deviceRate)
+                detail << dot << kHz(hostRate);
+            detail << dot << ((bool) c.getProperty("ownsOutputs", false) ? "sends its outputs" : "inputs only");
             g.setColour(colour::n400);
-            g.drawText(str(c, "bufferFrames") + " frames" + dot
-                           + ((bool) c.getProperty("ownsOutputs", false) ? "sends its outputs" : "inputs only"),
-                       x, juce::Justification::centredLeft, true);
+            g.drawText(detail, x, juce::Justification::centredLeft, true);
         }
 
     const auto sap = st.getProperty("sap", {});
