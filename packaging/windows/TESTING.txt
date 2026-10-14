@@ -42,17 +42,32 @@ Send (DAW -> network)
 ---------------------
 - DAW outputs 1-8 go out as "Net Out 1", 9-16 as "Net Out 2", and so on,
   announced by SAP and NMOS. Route them from the console or Sluice.
+- Several programs may play out through Inlet at once (up to eight): their
+  outputs are mixed. The Status page says which programs send their outputs.
+
+DAW sample rates
+----------------
+- The DAW may run at 44.1, 48, 88.2, 96, 176.4 or 192 kHz, whatever the
+  network's rate: Inlet converts. The Status page shows a program's own rate
+  next to it when Inlet converts for it.
+- Converting adds a little latency (a few milliseconds at most), which Inlet
+  reports to the DAW, so its delay compensation stays exact. At the
+  network's rate nothing is converted.
 
 Start, Stop and quitting
 ------------------------
 - Status page, "Stop Inlet" (top right), or the tray menu's "Stop Inlet": the
   service (inletd) quits. Inlet's senders leave the network (SAP deletions,
-  NMOS deregistration and an mDNS goodbye), its receivers stop, and a DAW
-  using Inlet is asked to reset; reopening the device fails until Inlet is
-  started again. If a DAW is using Inlet, the app asks first.
+  NMOS deregistration and an mDNS goodbye) and its receivers stop. A DAW
+  using Inlet keeps running and hears silence. If a DAW is using Inlet, the
+  app asks first.
 - Status page, "Start Inlet" (shown while stopped), or the tray menu's "Start
-  Inlet": the service starts and the app reconnects within a few seconds.
-  Reopen the ASIO device in the DAW (or restart its audio engine).
+  Inlet": the service starts and the app reconnects within a few seconds. A
+  DAW that kept Inlet open carries on by itself (within half a second of the
+  service starting); nothing needs reopening.
+- Changing the channel counts or the sample rate on the Settings page asks a
+  DAW using Inlet to reset (it reopens the device itself); other settings
+  don't interrupt it.
 - Tray menu, "Quit the Inlet app": the window and tray icon go; the sound card
   keeps running. Start "Inlet" from the Start menu to bring the app back.
 - Tray menu, "Quit Inlet completely": stops the service as above, then quits
@@ -63,12 +78,17 @@ Start, Stop and quitting
 
 Loopback self-test (no other device needed)
 -------------------------------------------
-1. Close your DAW (one program writes Inlet's outputs at a time).
+1. Close your DAW (Inlet mixes every program's outputs, and the DAW's would
+   be added to the test's).
 2. Inlet app, Receivers page: select "Net In 1", choose the stream "Net Out 1",
    "Play on this receiver".
 3. In a command prompt in the installed folder (C:\Program Files\Inlet\tools):
      inlet-asio-loopback.exe ..\inlet_asio.dll 15 128
    It should end with "PASS: every sample came back, at one fixed latency".
+4. The same with the DAW-side rate converted, for example at 44.1 kHz:
+     inlet-asio-loopback.exe ..\inlet_asio.dll 15 128 44100
+   It should end with "PASS: the samples came back through the converters,
+   at one round trip".
 
 Where things are
 ----------------
@@ -84,7 +104,6 @@ Double-click uninstall.cmd in C:\Program Files\Inlet (or in this folder).
 
 Known limits of this build
 --------------------------
-- 48 kHz (or the rate set in Settings) only: the DAW must run at the network's rate.
-- One program writes Inlet's outputs at a time (the first to start).
+- Up to eight programs play out at once; a ninth plays Inlet's inputs only.
 - 32-sample ASIO buffers may click; 64 and above are recommended.
 - macOS is not in this build.
