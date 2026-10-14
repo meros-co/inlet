@@ -261,7 +261,7 @@ int main(int argc, char** argv)
             // The output ring holds what the host wrote, two periods on.
             const uint64_t lastOut = gLastPos.load() + 2 * (uint64_t) gFrames;
             int32_t v = 0;
-            CHECK_EQ(aes67_ring_read(region->txRing(0), (uint32_t) lastOut, &v, 1), 1);
+            CHECK_EQ(aes67_ring_read(region->txRing(0, 0), (uint32_t) lastOut, &v, 1), 1);
             CHECK_EQ(v, (int32_t) ((gLastPos.load() - gFirstPos.load()) & 0x7FFFF));
             // The client slot says who and how it went.
             CHECK(std::string(region->clients()[0].app).find("test_asio_driver") != std::string::npos);
@@ -298,8 +298,8 @@ int main(int argc, char** argv)
             // and the converter's look-ahead).
             const uint64_t at = convertDevice(gLastPos.load() - 4 * (uint64_t) gFrames);
             int32_t v[2] = {};
-            CHECK_EQ(aes67_ring_read(region->txRing(0), (uint32_t) at, v, 1), 1);
-            CHECK_EQ(aes67_ring_read(region->txRing(0), (uint32_t) (at + 480), v + 1, 1), 1);
+            CHECK_EQ(aes67_ring_read(region->txRing(0, 0), (uint32_t) at, v, 1), 1);
+            CHECK_EQ(aes67_ring_read(region->txRing(0, 0), (uint32_t) (at + 480), v + 1, 1), 1);
             CHECK(std::abs((v[1] - v[0]) - 441) <= 1);   // 480 device frames are 441 host frames
             const double hostOfDevice = (double) at * 44100.0 / 48000.0;
             const double written = (double) v[0] + (double) gFirstPos.load();

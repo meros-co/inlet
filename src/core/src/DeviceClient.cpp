@@ -92,21 +92,36 @@ bool DeviceClient::daemonAlive(int64_t nowMono) const
 
 bool DeviceClient::claimOutputs()
 {
+    if (ownsOutputs())
+        return true;
     const uint32_t me = (uint32_t) slot + 1;
-    uint32_t expect = 0;
-    auto& owner = region->header().outputOwner;
-    return owner.compare_exchange_strong(expect, me) || expect == me;
+    auto* layers = region->header().outputLayers;
+    for (int l = 0; l < shm::kOutputLayers; ++l)
+    {
+        uint32_t expect = 0;
+        if (layers[l].compare_exchange_strong(expect, me))
+        {
+            layer = l;
+            return true;
+        }
+    }
+    layer = -1;
+    return false;
 }
 
 void DeviceClient::releaseOutputs()
 {
+    if (layer < 0)
+        return;
     uint32_t me = (uint32_t) slot + 1;
-    region->header().outputOwner.compare_exchange_strong(me, 0);
+    region->header().outputLayers[layer].compare_exchange_strong(me, 0);
+    layer = -1;
 }
 
 bool DeviceClient::ownsOutputs() const
 {
-    return region->header().outputOwner.load(std::memory_order_relaxed) == (uint32_t) slot + 1;
+    // inletd frees the layer of a host that stopped answering.
+    return layer >= 0 && region->header().outputLayers[layer].load(std::memory_order_relaxed) == (uint32_t) slot + 1;
 }
 
 void DeviceClient::readInputs(uint64_t periodStart, float* const* channels, int count, int frames)
@@ -171,7 +186,7 @@ void DeviceClient::writeOutputInt32(uint64_t firstSample, int channel, const int
 {
     if (!ownsOutputs() || channel < 0 || (uint32_t) channel >= outputs())
         return;
-    aes67_ring* ring = region->txRing(channel);
+    aes67_ring* ring = region->txRing(layer, channel);
     for (int i = 0; i < frames; ++i)
         aes67_ring_write(ring, (uint32_t) (firstSample + (uint64_t) i), src[i] >> 8);
 }
@@ -189,7 +204,7 @@ void DeviceClient::writeOutputRaw(uint64_t position, int channel, const int32_t*
 {
     if (!ownsOutputs() || channel < 0 || (uint32_t) channel >= outputs())
         return;
-    aes67_ring* ring = region->txRing(channel);
+    aes67_ring* ring = region->txRing(layer, channel);
     for (int i = 0; i < frames; ++i)
         aes67_ring_write(ring, (uint32_t) (position + (uint64_t) i), src[i]);
 }
@@ -201,7 +216,7 @@ void DeviceClient::writeOutputs(uint64_t firstSample, const float* const* channe
     for (int c = 0; c < count; ++c)
     {
         const float* src = channels[c];
-        aes67_ring* ring = region->txRing(c);
+        aes67_ring* ring = region->txRing(layer, c);
         for (int i = 0; i < frames; ++i)
         {
             const float v = src != nullptr ? std::clamp(src[i], -1.0f, 1.0f - kToFloat) : 0.0f;
@@ -217,7 +232,7 @@ void DeviceClient::writeOutputsInt32(uint64_t firstSample, const int32_t* const*
     for (int c = 0; c < count; ++c)
     {
         const int32_t* src = channels[c];
-        aes67_ring* ring = region->txRing(c);
+        aes67_ring* ring = region->txRing(layer, c);
         for (int i = 0; i < frames; ++i)
             aes67_ring_write(ring, (uint32_t) (firstSample + (uint64_t) i), src != nullptr ? (src[i] >> 8) : 0);
     }

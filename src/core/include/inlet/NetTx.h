@@ -42,6 +42,12 @@ struct TxStreamConfig
     uint32_t framesPerPacket = 48;   ///< 1 ms at 48 kHz
     uint32_t ssrc = 0;               ///< 0 = random
     aes67_ring* rings = nullptr;     ///< `channels` rings written by the drivers
+    /** Several hosts' outputs: `layers` sets of `channels` rings,
+        `layerStride` rings apart, summed. A layer whose `layerInUse` entry
+        is zero is skipped (null: all are used). */
+    int layers = 1;
+    size_t layerStride = 0;
+    const std::atomic<uint32_t>* layerInUse = nullptr;
 };
 
 struct TxStreamStats

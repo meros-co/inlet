@@ -75,7 +75,7 @@ Offsets offsetsFor(const Region::Layout& l)
     o.rxRings = at;
     at = align64(at + sizeof(aes67_ring_t) * l.receivers * l.receiverChannels);
     o.txRings = at;
-    at = align64(at + sizeof(aes67_ring_t) * l.outputs);
+    at = align64(at + sizeof(aes67_ring_t) * l.outputs * kOutputLayers);
     o.total = at;
     return o;
 }
@@ -224,7 +224,7 @@ std::unique_ptr<Region> Region::create(const Layout& l, std::string& error, cons
         new (bytes + o.clients + i * sizeof(ClientSlot)) ClientSlot();
     for (uint32_t i = 0; i < l.receivers * l.receiverChannels; ++i)
         aes67_ring_init(reinterpret_cast<aes67_ring_t*>(bytes + o.rxRings) + i);
-    for (uint32_t i = 0; i < l.outputs; ++i)
+    for (uint32_t i = 0; i < l.outputs * kOutputLayers; ++i)
         aes67_ring_init(reinterpret_cast<aes67_ring_t*>(bytes + o.txRings) + i);
 
     // Published last: a driver that sees the magic sees everything above.
@@ -340,9 +340,10 @@ aes67_ring* Region::rxRings(int receiver)
          + (size_t) (receiver - 1) * hdr->receiverChannels;
 }
 
-aes67_ring* Region::txRing(int output)
+aes67_ring* Region::txRing(int layer, int output)
 {
-    return reinterpret_cast<aes67_ring_t*>(reinterpret_cast<uint8_t*>(hdr) + hdr->txRingsOffset) + output;
+    return reinterpret_cast<aes67_ring_t*>(reinterpret_cast<uint8_t*>(hdr) + hdr->txRingsOffset)
+         + (size_t) layer * hdr->outputs + output;
 }
 
 const aes67_ring* Region::inputRing(int input)

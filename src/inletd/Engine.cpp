@@ -344,8 +344,11 @@ void Engine::Impl::watchClients(int64_t now)
             continue;
         if (now - slots[i].heartbeatMono.load() > 2'000'000'000LL && slots[i].running.load())
         {
-            uint32_t me = (uint32_t) i + 1;
-            region->header().outputOwner.compare_exchange_strong(me, 0);
+            for (auto& layer : region->header().outputLayers)
+            {
+                uint32_t me = (uint32_t) i + 1;
+                layer.compare_exchange_strong(me, 0);
+            }
             slots[i].running.store(0);
         }
         // Attached but silent for a minute (a host that loaded the driver and
@@ -404,18 +407,20 @@ nlohmann::json Engine::Impl::clientsJson() const
 {
     auto out = nlohmann::json::array();
     shm::ClientSlot* slots = region->clients();
-    const uint32_t owner = region->header().outputOwner.load();
     for (int i = 0; i < shm::kMaxClients; ++i)
     {
         if (slots[i].state.load() != 2)
             continue;
+        bool writesOutputs = false;
+        for (auto& layer : region->header().outputLayers)
+            writesOutputs = writesOutputs || layer.load() == (uint32_t) i + 1;
         const auto kind = (shm::ClientKind) slots[i].kind.load();
         out.push_back({ { "kind", kind == shm::ClientKind::Asio ? "asio" : kind == shm::ClientKind::CoreAudio ? "coreaudio" : "other" },
                         { "app", std::string(slots[i].app, strnlen(slots[i].app, shm::kLabelBytes)) },
                         { "pid", slots[i].pid.load() }, { "running", slots[i].running.load() != 0 },
                         { "bufferFrames", slots[i].bufferFrames.load() }, { "periods", slots[i].periods.load() },
                         { "lateWakeups", slots[i].lateWakeups.load() }, { "resyncs", slots[i].resyncs.load() },
-                        { "ownsOutputs", owner == (uint32_t) i + 1 } });
+                        { "ownsOutputs", writesOutputs }, { "sampleRate", slots[i].sampleRate.load() } });
     }
     return out;
 }

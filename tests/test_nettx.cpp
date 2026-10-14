@@ -8,6 +8,7 @@
 #include <aes67/netrx.h>
 #include <aes67/rtp.h>
 
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <string>
@@ -132,6 +133,61 @@ static void pacesOnTheMediaClock()
     CHECK_EQ(sent.back().h.timestamp, (uint32_t) next);
 }
 
+/** Two hosts writing outputs: the packet carries their sum, clipped; a layer
+    not in use, or missing samples, adds nothing. */
+static void mixesLayers()
+{
+    ClockMap map;
+    const ClockSample c = freeRun();
+    map.publish(c);
+    std::vector<Sent> sent;
+    auto tx = NetTx::openDetached(map, [&](int, uint32_t, uint16_t, const uint8_t* p, size_t len) {
+        Sent s;
+        aes67_rtp_parse_header(p, len, &s.h);
+        for (size_t o = AES67_RTP_HEADER_BYTES; o + 3 <= len; o += 3)
+            s.samples.push_back(aes67_l24_to_i32(p + o));
+        sent.push_back(s);
+    });
+    tx->setSendOffsetUs(0);
+
+    // Three layers of one channel; layer 2 is written but not in use.
+    auto rings = makeRings(3);
+    std::atomic<uint32_t> inUse[3] { { 1 }, { 2 }, { 0 } };
+    TxStreamConfig cfg;
+    cfg.group = 0x010145EF;
+    cfg.channels = 1;
+    cfg.rings = rings.get();
+    cfg.layers = 3;
+    cfg.layerStride = 1;
+    cfg.layerInUse = inUse;
+    std::string err;
+    const int slot = tx->addStream(cfg, err);
+    CHECK(slot >= 0);
+
+    const uint64_t base = sampleAt(c.ptpNs, 48000);
+    for (uint64_t i = base; i < base + 96; ++i)
+    {
+        aes67_ring_write(&rings[0], (uint32_t) i, 1000);
+        aes67_ring_write(&rings[1], (uint32_t) i, i < base + 48 ? 234 : 8388000);
+        aes67_ring_write(&rings[2], (uint32_t) i, 5);
+    }
+    // Packet 3: only layer 0 has it.
+    for (uint64_t i = base + 96; i < base + 144; ++i)
+        aes67_ring_write(&rings[0], (uint32_t) i, -7);
+
+    tx->pump(monoForSample(c, base + 10));   // starts with the packet containing now
+    tx->pump(monoForSample(c, base + 48 * 4));
+    CHECK_EQ(sent.size(), 4u);
+    if (sent.size() == 4)
+    {
+        CHECK_EQ(sent[0].samples[0], 1234);
+        CHECK_EQ(sent[1].samples[0], 8388607);   // 8 389 000, clipped to 24 bits
+        CHECK_EQ(sent[2].samples[0], -7);
+        CHECK_EQ(sent[3].samples[0], 0);
+    }
+    CHECK_EQ(tx->stats(slot).silentPackets, 1u);   // only the last
+}
+
 static void refusesWhatDoesNotFit()
 {
     ClockMap map;
@@ -217,6 +273,7 @@ static void loopsBackThroughTheWire()
 int main()
 {
     pacesOnTheMediaClock();
+    mixesLayers();
     refusesWhatDoesNotFit();
     loopsBackThroughTheWire();
     TEST_MAIN_END();

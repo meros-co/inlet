@@ -15,7 +15,8 @@
  *   clients     one slot per attached driver: who, what, alive
  *   labels      device input and output channel names
  *   rx rings    receivers x channels, written by inletd's receive path
- *   tx rings    one per device output, written by the output-owning client
+ *   tx rings    output layers x device outputs: each host writing outputs has
+ *               a layer of its own, and the sender sums the layers in use
  *
  * The counts are fixed for the region's life: inletd sizes it from its
  * configuration and makes a new one (with a new name and serial) when they
@@ -52,8 +53,10 @@ namespace shm
 {
 
 constexpr uint32_t kMagic = 0x544C4E49;   // "INLT"
-constexpr uint32_t kLayoutVersion = 1;
+constexpr uint32_t kLayoutVersion = 2;
 constexpr int kMaxClients = 16;
+/** How many hosts' outputs are mixed at once; a host past these plays inputs only. */
+constexpr int kOutputLayers = 8;
 constexpr int kLabelBytes = 64;
 
 enum class ClientKind : uint32_t { None = 0, Asio = 1, CoreAudio = 2 };
@@ -89,7 +92,7 @@ struct alignas(64) Header
     std::atomic<int64_t> daemonHeartbeatMono { 0 };
     std::atomic<int32_t> linkOffsetFrames { 96 };   ///< inputs play this far behind the media clock
     std::atomic<uint32_t> labelsGeneration { 0 };   ///< odd while labels are being written
-    std::atomic<uint32_t> outputOwner { 0 };        ///< client slot + 1 that writes the tx rings; 0 = none
+    std::atomic<uint32_t> outputLayers[kOutputLayers] {};   ///< per layer: the client slot + 1 writing it; 0 = free
 
     ClockMap clock;
 };
@@ -125,7 +128,7 @@ public:
     char* inputLabel(int channel);
     char* outputLabel(int channel);
     aes67_ring* rxRings(int receiver);   ///< 1-based: `receiverChannels` rings
-    aes67_ring* txRing(int output);      ///< 0-based device output
+    aes67_ring* txRing(int layer, int output);   ///< 0-based layer and device output
 
     /** The ring a device input reads, per the map; null = silence. */
     const aes67_ring* inputRing(int input);

@@ -400,7 +400,7 @@ ASIOError InletAsio::start()
     DeviceClient* c = client();
     if (c == nullptr || !engine)
         return ASE_NotPresent;
-    c->claimOutputs();   // the first running host writes the outputs
+    c->claimOutputs();   // a layer of its own, mixed with other hosts' by the sender
     half = 1;
     pendingOutput = false;
     hostUsesOutputReady = false;

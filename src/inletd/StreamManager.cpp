@@ -406,7 +406,11 @@ bool StreamManager::openSender(Sender& s, std::string& error)
     tc.channels = (uint16_t) s.channels;
     tc.sampleRate = cfg.sampleRate;
     tc.framesPerPacket = (uint32_t) (((uint64_t) cfg.sampleRate * s.ptimeUs + 500000u) / 1000000u);
-    tc.rings = region.txRing(s.firstOutput);
+    // Every host's layer of these outputs, summed by the sender.
+    tc.rings = region.txRing(0, s.firstOutput);
+    tc.layers = shm::kOutputLayers;
+    tc.layerStride = region.header().outputs;
+    tc.layerInUse = region.header().outputLayers;
     s.txSlot = netTx.addStream(tc, error);
     if (s.txSlot < 0)
         return false;

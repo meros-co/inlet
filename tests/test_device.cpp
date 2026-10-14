@@ -77,22 +77,38 @@ static void sharesAudio()
     a->readInputsInt32(1010, ichans, 4, 10);
     CHECK_EQ(i1[3], 1003 * 100 * 256);
 
-    // One output writer at a time.
-    CHECK(a->claimOutputs());
-    CHECK(!b->claimOutputs());
+    // Each output writer has a layer of its own.
     std::vector<float> out(8, 0.25f);
     const float* ochans[2] = { out.data(), nullptr };
-    b->writeOutputs(5000, ochans, 2, 8);   // not the owner: ignored
+    a->writeOutputs(5000, ochans, 2, 8);   // not writing outputs yet: ignored
     int32_t v = 0;
-    CHECK_EQ(aes67_ring_read(daemon->txRing(0), 5000, &v, 1), 0);
-    a->writeOutputs(5000, ochans, 2, 8);
-    CHECK_EQ(aes67_ring_read(daemon->txRing(0), 5000, &v, 1), 1);
-    CHECK_EQ(v, 2097152);   // 0.25 x 2^23
-    CHECK_EQ(aes67_ring_read(daemon->txRing(1), 5007, &v, 1), 1);
-    CHECK_EQ(v, 0);
-    a.reset();   // detaching gives the outputs up
+    CHECK_EQ(aes67_ring_read(daemon->txRing(0, 0), 5000, &v, 1), 0);
+    CHECK(a->claimOutputs());
     CHECK(b->claimOutputs());
+    CHECK_EQ(daemon->header().outputLayers[0].load(), 1u);   // slot 0 + 1
+    CHECK_EQ(daemon->header().outputLayers[1].load(), 2u);
+    a->writeOutputs(5000, ochans, 2, 8);
+    CHECK_EQ(aes67_ring_read(daemon->txRing(0, 0), 5000, &v, 1), 1);
+    CHECK_EQ(v, 2097152);   // 0.25 x 2^23
+    CHECK_EQ(aes67_ring_read(daemon->txRing(0, 1), 5007, &v, 1), 1);
+    CHECK_EQ(v, 0);
+    CHECK_EQ(aes67_ring_read(daemon->txRing(1, 0), 5000, &v, 1), 0);   // b's layer: nothing yet
+    b->writeOutputs(5000, ochans, 2, 8);
+    CHECK_EQ(aes67_ring_read(daemon->txRing(1, 0), 5000, &v, 1), 1);
+    a.reset();   // detaching gives the layer up
+    CHECK_EQ(daemon->header().outputLayers[0].load(), 0u);
     CHECK_EQ(daemon->clients()[0].state.load(), 0u);
+    // Every layer taken: the next host plays inputs only.
+    std::vector<std::unique_ptr<DeviceClient>> more;
+    for (int i = 0; i < shm::kOutputLayers; ++i)
+    {
+        more.push_back(DeviceClient::attach(opt, err));
+        CHECK(more.back() != nullptr);
+    }
+    int claimed = 0;
+    for (auto& m : more)
+        claimed += m && m->claimOutputs() ? 1 : 0;
+    CHECK_EQ(claimed, shm::kOutputLayers - 1);   // b holds one
 }
 
 /** The engine wakes once a period, on the media clock, with consecutive positions. */

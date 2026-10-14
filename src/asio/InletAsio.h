@@ -29,8 +29,8 @@
  * resync, not a reset). Only a change of channels or rate asks the host to
  * reset.
  *
- * Several hosts may load Inlet at once (each attaches its own client); the
- * first one running writes the outputs.
+ * Several hosts may load Inlet at once (each attaches its own client), and up
+ * to shm::kOutputLayers of them play out at once: the sender mixes them.
  */
 
 #include <atomic>

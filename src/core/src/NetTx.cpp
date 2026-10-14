@@ -101,6 +101,7 @@ struct TxSlot
     uint64_t next = 0;   // first sample of the next packet
     uint16_t seq = 0;
     std::vector<int32_t> channel, interleaved;
+    std::vector<int64_t> mix;
 
     std::atomic<uint32_t> ssrc { 0 };
     std::atomic<uint64_t> packets { 0 }, silent { 0 }, skipped { 0 }, sendErrors { 0 };
@@ -161,19 +162,36 @@ void NetTx::Impl::emit(int index, TxSlot& s, const ClockSample&)
     const TxStreamConfig& c = s.cfg;
     const int P = (int) c.framesPerPacket;
     const int ch = c.channels;
-    bool complete = true;
-    for (int k = 0; k < ch && complete; ++k)
+    // Each host writing outputs has a layer; the packet is their sum. A layer
+    // missing any of the packet's samples (its host stopped, or fell behind)
+    // adds nothing.
+    std::fill(s.mix.begin(), s.mix.end(), 0);
+    int heard = 0;
+    for (int l = 0; l < c.layers; ++l)
     {
-        if (aes67_ring_read(&c.rings[k], (uint32_t) s.next, s.channel.data(), P) < P)
-            complete = false;
-        else
-            for (int f = 0; f < P; ++f)
-                s.interleaved[(size_t) (f * ch + k)] = s.channel[(size_t) f];
+        if (c.layerInUse != nullptr && c.layerInUse[l].load(std::memory_order_relaxed) == 0)
+            continue;
+        const aes67_ring* rings = c.rings + (size_t) l * c.layerStride;
+        bool complete = true;
+        for (int k = 0; k < ch && complete; ++k)
+        {
+            if (aes67_ring_read(&rings[k], (uint32_t) s.next, s.channel.data(), P) < P)
+                complete = false;
+            else
+                for (int f = 0; f < P; ++f)
+                    s.interleaved[(size_t) (f * ch + k)] = s.channel[(size_t) f];
+        }
+        if (!complete)
+            continue;
+        for (size_t i = 0; i < s.mix.size(); ++i)
+            s.mix[i] += s.interleaved[i];
+        ++heard;
     }
-    if (!complete)
+    for (size_t i = 0; i < s.mix.size(); ++i)
+        s.interleaved[i] = (int32_t) std::clamp<int64_t>(s.mix[i], -8388608, 8388607);
+    if (heard == 0)
     {
         // Silence, not a gap: receivers keep the route and the clock.
-        std::fill(s.interleaved.begin(), s.interleaved.end(), 0);
         s.silent.fetch_add(1, std::memory_order_relaxed);
     }
 
@@ -365,6 +383,7 @@ int NetTx::addStream(const TxStreamConfig& cfg, std::string& error)
         s.ssrc.store(cfg.ssrc ? cfg.ssrc : (uint32_t) impl->rng(), std::memory_order_relaxed);
         s.channel.assign(cfg.framesPerPacket, 0);
         s.interleaved.assign((size_t) cfg.framesPerPacket * cfg.channels, 0);
+        s.mix.assign((size_t) cfg.framesPerPacket * cfg.channels, 0);
         for (auto* a : { &s.packets, &s.silent, &s.skipped, &s.sendErrors })
             a->store(0, std::memory_order_relaxed);
         s.state.store(Active, std::memory_order_release);

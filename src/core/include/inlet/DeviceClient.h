@@ -16,8 +16,9 @@
  *    (ASIO's double buffer: the half filled now is the one played next), and
  *    is written to the rings at that position, before the pacer needs it.
  *
- * Only one client writes the outputs at a time (the first to start); others
- * play inputs only, and the status says so.
+ * Each client writing outputs has a layer of rings of its own, and the sender
+ * sums the layers: several hosts play out at once, mixed. Past
+ * shm::kOutputLayers of them, a host plays inputs only, and the status says so.
  *
  * Real-time safety: readInputs/writeOutputs/heartbeat take no locks and
  * allocate nothing.
@@ -60,8 +61,8 @@ public:
     /** inletd is alive: its heartbeat is recent. */
     bool daemonAlive(int64_t nowMono) const;
 
-    /** Becomes the output writer if nobody is. True when this client writes
-        the outputs (now or already). */
+    /** Takes a free output layer. True when this client writes outputs (now
+        or already); false when every layer is taken. */
     bool claimOutputs();
     void releaseOutputs();
     bool ownsOutputs() const;
@@ -103,6 +104,7 @@ private:
     DeviceClient() = default;
     std::unique_ptr<shm::Region> region;
     int slot = -1;
+    int layer = -1;   // the output layer this client writes; -1 = none
 };
 
 /**
