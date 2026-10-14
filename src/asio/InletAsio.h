@@ -18,6 +18,17 @@
  *    the callback still makes it); it is written to the rings when the host
  *    calls outputReady(), or at the next switch if it never does.
  *
+ * A host may run at another rate than the network (44.1 kHz on 48 kHz, say).
+ * Its periods are then counted at its own rate, still on the media clock, and
+ * a RateConverter each way moves the audio between the rates. The clocks are
+ * the same, so the ratio is exact and nothing drifts.
+ *
+ * When the PTP clock steps, the host is told (kAsioResyncRequest). When
+ * inletd stops, the host keeps running on silence; when inletd comes back with
+ * the same channels and rate, the driver attaches to it and carries on (a
+ * resync, not a reset). Only a change of channels or rate asks the host to
+ * reset.
+ *
  * Several hosts may load Inlet at once (each attaches its own client); the
  * first one running writes the outputs.
  */
@@ -37,10 +48,11 @@
 #include "asio.h"
 #include "iasiodrv.h"
 
+#include "inlet/DeviceClient.h"
+
 namespace inlet
 {
-class DeviceClient;
-class PeriodEngine;
+class RateConverter;
 
 // {C228C42A-9291-4AEB-830B-16B7963F899E}
 inline constexpr CLSID kInletAsioClsid = { 0xc228c42a, 0x9291, 0x4aeb, { 0x83, 0x0b, 0x16, 0xb7, 0x96, 0x3f, 0x89, 0x9e } };
@@ -80,6 +92,8 @@ public:
     ASIOError outputReady() override;
 
     static constexpr long kMinBuffer = 32, kMaxBuffer = 2048, kPreferredBuffer = 128;
+    /** The host rates Inlet plays, whatever the network's rate. */
+    static constexpr uint32_t kHostRates[] = { 44100, 48000, 88200, 96000, 176400, 192000 };
 
 private:
     struct Channel
@@ -89,18 +103,43 @@ private:
         std::vector<int32_t> halves[2];
     };
 
-    void onPeriod(uint64_t periodStart, bool late);
+    /** One direction's conversion between the host's rate and the device's. */
+    struct Conversion
+    {
+        std::unique_ptr<RateConverter> conv;
+        std::vector<int> channels;          // indices into `channels`
+        std::vector<float> in, out;         // interleaved
+        std::vector<int32_t> scratch;
+        uint64_t devicePos = 0;             // next device frame read or written
+        uint64_t nextHost = 0;              // the host sample this continues from
+        bool anchored = false;
+    };
+
+    DeviceClient* client() const { return current.load(); }
+    uint32_t deviceRate() const;
+    uint32_t rate() const;                  // the host's
+    bool converting() const { return rate() != deviceRate(); }
+
+    void onPeriod(const PeriodEngine::Period& p);
+    void readInputHalf(int half, uint64_t hostStart);
     void writeOutputHalf(int half, uint64_t firstSample);
+    void buildConversions();
+    void message(long selector);
+    void reattach(int64_t nowMono);
 
     std::atomic<ULONG> refs { 1 };
-    std::unique_ptr<DeviceClient> client;
+    std::vector<std::unique_ptr<DeviceClient>> clients;   // every region attached to; the last is current
+    std::atomic<DeviceClient*> current { nullptr };
     std::unique_ptr<PeriodEngine> engine;
     std::string error;
+    std::string app;
 
     std::vector<Channel> channels;
     long bufferFrames = 0;
+    uint32_t hostRate = 0;                  // 0: the device's
     ASIOCallbacks* callbacks = nullptr;
     bool timeInfo = false;
+    Conversion inputs, outputs;
 
     // Engine thread and host thread.
     std::atomic<int> half { 1 };                    // the half handed to the host last
@@ -109,8 +148,8 @@ private:
     std::atomic<bool> hostUsesOutputReady { false };
     std::atomic<bool> pendingOutput { false };      // the last half handed out awaits writing
     std::atomic<bool> resetRequested { false };
-    std::atomic<uint64_t> halfFirst[2] {};        // the device sample each half plays from
-    uint64_t serial = 0;
+    std::atomic<uint64_t> halfFirst[2] {};        // the host sample each half plays from
+    int64_t lastAttachTry = 0;                      // engine thread
 };
 
 } // namespace inlet
