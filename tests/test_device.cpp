@@ -120,11 +120,11 @@ static void periodsOnTime()
     std::vector<uint64_t> starts;
     std::vector<int64_t> wakes;
     int late = 0;
-    PeriodEngine engine(*client, 128, [&](uint64_t start, bool isLate) {
+    PeriodEngine engine(*client, 128, [&](const PeriodEngine::Period& p) {
         std::lock_guard<std::mutex> g(m);
-        starts.push_back(start);
+        starts.push_back(p.start);
         wakes.push_back(monoNowNs());
-        late += isLate ? 1 : 0;
+        late += p.late ? 1 : 0;
     });
     engine.start();
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
@@ -145,9 +145,86 @@ static void periodsOnTime()
     CHECK(daemon->clients()[0].periods.load() == starts.size());
 }
 
+/** A 44.1 kHz host on a 48 kHz device: periods counted at 44.1 kHz, on the
+    media clock; a PTP step and a switch to a restarted inletd's region each
+    re-anchor the schedule and say so on the next period. */
+static void hostRateStepsAndSwitch()
+{
+    const std::string nameA = regionName() + "c", nameB = regionName() + "d";
+    std::string err;
+    auto daemonA = shm::Region::create({}, err, nameA.c_str());
+    auto daemonB = shm::Region::create({}, err, nameB.c_str());
+    CHECK(daemonA && daemonB);
+    if (!daemonA || !daemonB)
+        return;
+    ClockSample c;
+    c.monoNs = monoNowNs();
+    c.ptpNs = 1'780'000'000'000'000'000LL;
+    daemonA->clock().publish(c);
+    ClockSample later = c;
+    later.ptpNs += 5'000'000'000LL;   // the restarted inletd's clock: 5 s on
+    daemonB->clock().publish(later);
+
+    DeviceClient::Options opt;
+    opt.regionName = nameA.c_str();
+    auto clientA = DeviceClient::attach(opt, err);
+    opt.regionName = nameB.c_str();
+    auto clientB = DeviceClient::attach(opt, err);
+    CHECK(clientA && clientB);
+    if (!clientA || !clientB)
+        return;
+
+    std::mutex m;
+    std::vector<PeriodEngine::Period> periods;
+    std::vector<int64_t> wakes;
+    PeriodEngine* self = nullptr;
+    PeriodEngine engine(*clientA, 128, [&](const PeriodEngine::Period& p) {
+        std::lock_guard<std::mutex> g(m);
+        periods.push_back(p);
+        wakes.push_back(monoNowNs());
+        if (periods.size() == 40)
+        {
+            // PTP stepped by a second: a new epoch.
+            ClockSample stepped = c;
+            stepped.ptpNs += 1'000'000'000LL;
+            stepped.epoch = 1;
+            daemonA->clock().publish(stepped);
+        }
+        if (periods.size() == 80)
+            self->switchClient(*clientB);
+    }, 44100);
+    self = &engine;
+    engine.start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    engine.stop();
+
+    std::lock_guard<std::mutex> g(m);
+    // 400 ms of 128-frame periods at 44.1 kHz is about 138.
+    CHECK(periods.size() >= 110);
+    int resyncs = 0;
+    for (size_t i = 1; i < periods.size(); ++i)
+    {
+        if (periods[i].resynced)
+        {
+            ++resyncs;
+            continue;
+        }
+        CHECK_EQ(periods[i].start - periods[i - 1].start, 128u);
+    }
+    CHECK_EQ(resyncs, 2);
+    CHECK(periods[40].resynced);   // the step, seen after period 40's callback
+    CHECK(periods[80].resynced);   // the switch
+    // After the switch, the periods are on the new clock, at 44.1 kHz.
+    for (size_t i = 81; i < periods.size(); ++i)
+        CHECK(wakes[i] >= later.monoAt(ptpAtSample(periods[i].start + 128, 44100)));
+    // The client says it runs at 44.1 kHz on the 48 kHz device.
+    CHECK_EQ(daemonB->clients()[0].sampleRate.load(), 44100u);
+}
+
 int main()
 {
     sharesAudio();
     periodsOnTime();
+    hostRateStepsAndSwitch();
     TEST_MAIN_END();
 }

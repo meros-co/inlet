@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <utility>
 
 #if defined(_WIN32)
 #  ifndef NOMINMAX
@@ -175,6 +176,24 @@ void DeviceClient::writeOutputInt32(uint64_t firstSample, int channel, const int
         aes67_ring_write(ring, (uint32_t) (firstSample + (uint64_t) i), src[i] >> 8);
 }
 
+void DeviceClient::readInputRaw(uint64_t position, int channel, int32_t* dst, int frames)
+{
+    const aes67_ring* ring = region->inputRing(channel);
+    if (ring == nullptr)
+        std::fill(dst, dst + frames, 0);
+    else
+        aes67_ring_read(ring, (uint32_t) position, dst, frames);
+}
+
+void DeviceClient::writeOutputRaw(uint64_t position, int channel, const int32_t* src, int frames)
+{
+    if (!ownsOutputs() || channel < 0 || (uint32_t) channel >= outputs())
+        return;
+    aes67_ring* ring = region->txRing(channel);
+    for (int i = 0; i < frames; ++i)
+        aes67_ring_write(ring, (uint32_t) (position + (uint64_t) i), src[i]);
+}
+
 void DeviceClient::writeOutputs(uint64_t firstSample, const float* const* channels, int count, int frames)
 {
     if (!ownsOutputs())
@@ -204,13 +223,13 @@ void DeviceClient::writeOutputsInt32(uint64_t firstSample, const int32_t* const*
     }
 }
 
-void DeviceClient::heartbeat(int64_t nowMono, bool isRunning, uint32_t bufferFrames)
+void DeviceClient::heartbeat(int64_t nowMono, bool isRunning, uint32_t bufferFrames, uint32_t hostRate)
 {
     auto& s = region->clients()[slot];
     s.heartbeatMono.store(nowMono, std::memory_order_relaxed);
     s.running.store(isRunning ? 1u : 0u, std::memory_order_relaxed);
     s.bufferFrames.store(bufferFrames, std::memory_order_relaxed);
-    s.sampleRate.store(sampleRate(), std::memory_order_relaxed);
+    s.sampleRate.store(hostRate != 0 ? hostRate : sampleRate(), std::memory_order_relaxed);
 }
 
 void DeviceClient::countPeriod(bool late, bool resynced)
@@ -241,8 +260,8 @@ std::string DeviceClient::outputLabel(int channel) const
 
 /* ---- the period engine ---------------------------------------------------------- */
 
-PeriodEngine::PeriodEngine(DeviceClient& c, uint32_t framesPerPeriod, Callback onPeriod)
-    : client(c), frames(framesPerPeriod), callback(std::move(onPeriod))
+PeriodEngine::PeriodEngine(DeviceClient& c, uint32_t framesPerPeriod, Callback onPeriod, uint32_t periodRate)
+    : client(&c), frames(framesPerPeriod), rate(periodRate != 0 ? periodRate : c.sampleRate()), callback(std::move(onPeriod))
 {
 }
 
@@ -278,31 +297,49 @@ void PeriodEngine::run()
     pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
 #endif
     ClockSample clk;
-    while (active.load() && !client.clock(clk))
+    while (active.load() && !client->clock(clk))
         sleepUntilMono(monoNowNs() + 1'000'000);
-    PeriodClock pc(client.sampleRate(), frames);
+    PeriodClock pc(rate, frames);
     pc.start(clk, monoNowNs());
     // A wake-up more than this past its deadline is counted as late.
-    const int64_t lateNs = (int64_t) frames * 1'000'000'000LL / client.sampleRate() / 2;
+    const int64_t lateNs = (int64_t) frames * 1'000'000'000LL / rate / 2;
+    // The host reports its own rate when it is not the device's.
+    const auto hostRate = [this] { return rate != client->sampleRate() ? rate : 0u; };
+    bool resyncNext = false;
 
     while (active.load())
     {
-        client.clock(clk);
+        client->clock(clk);
         const int64_t deadline = pc.deadlineMono(clk);
         sleepUntilMono(deadline);
         if (!active.load())
             break;
         const int64_t now = monoNowNs();
-        const bool late = now - deadline > lateNs;
-        callback(pc.periodStart(), late);
-        client.clock(clk);
-        const bool resynced = pc.advance(clk, monoNowNs());
-        if (resynced)
+        Period p;
+        p.start = pc.periodStart();
+        p.late = now - deadline > lateNs;
+        p.resynced = resyncNext;
+        callback(p);
+        if (switchTo != nullptr)
+        {
+            // A new inletd: its clock from now on, the schedule anchored afresh.
+            client = std::exchange(switchTo, nullptr);
+            while (active.load() && !client->clock(clk))
+                sleepUntilMono(monoNowNs() + 1'000'000);
+            pc.start(clk, monoNowNs());
+            resyncNext = true;
             resyncCount.fetch_add(1);
-        client.countPeriod(late, resynced);
-        client.heartbeat(now, true, frames);
+            client->heartbeat(now, true, frames, hostRate());
+            continue;
+        }
+        client->clock(clk);
+        resyncNext = pc.advance(clk, monoNowNs());
+        if (resyncNext)
+            resyncCount.fetch_add(1);
+        client->countPeriod(p.late, resyncNext);
+        client->heartbeat(now, true, frames, hostRate());
     }
-    client.heartbeat(monoNowNs(), false, frames);
+    client->heartbeat(monoNowNs(), false, frames, hostRate());
 #if defined(_WIN32)
     if (mmcss != nullptr)
         AvRevertMmThreadCharacteristics(mmcss);
