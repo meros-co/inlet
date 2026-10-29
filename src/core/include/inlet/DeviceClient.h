@@ -94,6 +94,10 @@ public:
     void heartbeat(int64_t nowMono, bool running, uint32_t bufferFrames, uint32_t hostRate = 0);
     void countPeriod(bool late, bool resynced);
 
+    /** Renames the client in the status: the Core Audio plug-in is one client
+        for every program playing through it, and names those playing now. */
+    void setApp(const std::string& app);
+
     /** A device input's or output's name, as labelled (empty = unnamed). */
     std::string inputLabel(int channel) const;
     std::string outputLabel(int channel) const;

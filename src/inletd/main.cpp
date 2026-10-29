@@ -8,6 +8,10 @@
 //
 //   inletd [--console] [--config PATH]
 //   inletd --install-service | --uninstall-service      (Windows, as administrator)
+//
+// On macOS launchd also listens on a socket for it (co.meros.inletd.plist):
+// a connection starts inletd when it is stopped, which is how the Inlet app's
+// Start Inlet works without administrator rights.
 
 #include "Config.h"
 #include "Engine.h"
@@ -30,6 +34,12 @@
 #  endif
 #  include <windows.h>
 #  include <sddl.h>
+#elif defined(__APPLE__)
+#  include <cstdlib>
+#  include <launch.h>
+#  include <sys/socket.h>
+#  include <thread>
+#  include <unistd.h>
 #endif
 
 namespace
@@ -221,6 +231,29 @@ int installService(bool install)
 
 #endif
 
+#if defined(__APPLE__)
+/** Started by launchd: takes the "Start" socket it listens on for inletd and
+    answers its connections (by closing them), so launchd sees them handled.
+    Nothing when inletd was started some other way. */
+void serveStartSocket()
+{
+    int* fds = nullptr;
+    size_t count = 0;
+    if (launch_activate_socket("Start", &fds, &count) != 0 || count == 0)
+        return;
+    for (size_t i = 0; i < count; ++i)
+        std::thread([fd = fds[i]] {
+            for (;;)
+            {
+                const int c = accept(fd, nullptr, nullptr);
+                if (c >= 0)
+                    close(c);
+            }
+        }).detach();
+    free(fds);
+}
+#endif
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -257,6 +290,10 @@ int main(int argc, char** argv)
             return 1;
         // Not started by the service manager: run here.
     }
+#endif
+#if defined(__APPLE__)
+    if (!console)
+        serveStartSocket();
 #endif
     std::signal(SIGINT, [](int) { requestQuit(); });
     std::signal(SIGTERM, [](int) { requestQuit(); });

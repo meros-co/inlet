@@ -79,9 +79,11 @@ bool Config::applySettings(const nlohmann::json& j, std::string& error)
 
 uint32_t Config::linkOffsetFrames() const
 {
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__APPLE__)
     // 2 ms left too little margin for 1 ms packets and Windows scheduling in
-    // end-to-end tests; 3 ms ran clean.
+    // end-to-end tests; 3 ms ran clean. The same on macOS (1 ms dropped
+    // audio every few hundred milliseconds; 3 ms, with real-time network
+    // threads, ran clean).
     const uint32_t us = linkOffsetUs ? linkOffsetUs : 3000;
 #else
     const uint32_t us = linkOffsetUs ? linkOffsetUs : 1000;

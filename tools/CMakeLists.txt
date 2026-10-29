@@ -11,3 +11,8 @@ if(WIN32)
     target_include_directories(inlet-asio-loopback PRIVATE ${PROJECT_SOURCE_DIR}/third_party/asiosdk/common)
     target_link_libraries(inlet-asio-loopback PRIVATE ole32)
 endif()
+
+if(APPLE)
+    add_executable(inlet-coreaudio-loopback coreaudio_loopback.cpp)
+    target_link_libraries(inlet-coreaudio-loopback PRIVATE "-framework CoreAudio" "-framework CoreFoundation")
+endif()

@@ -192,6 +192,12 @@ std::unique_ptr<PtpFollower> PtpFollower::open(int domain, const std::vector<std
                 g_free(self);
             }
         }
+#if defined(__APPLE__)
+        // inletd uses no GStreamer plugins. Installed, it carries its own
+        // GStreamer libraries: plugins from a GStreamer installed beside
+        // (Homebrew's) would load against the wrong ones.
+        g_setenv("GST_PLUGIN_SYSTEM_PATH_1_0", "", FALSE);
+#endif
         gst_init(nullptr, nullptr);
     }
 

@@ -257,6 +257,16 @@ void DeviceClient::countPeriod(bool late, bool resynced)
         s.resyncs.fetch_add(1, std::memory_order_relaxed);
 }
 
+void DeviceClient::setApp(const std::string& app)
+{
+    // Read by inletd's status without a lock: at worst one report shows a
+    // name half-written.
+    char* dst = region->clients()[slot].app;
+    const size_t n = std::min(app.size(), (size_t) shm::kLabelBytes - 1);
+    std::memcpy(dst, app.data(), n);
+    std::memset(dst + n, 0, (size_t) shm::kLabelBytes - n);
+}
+
 std::string DeviceClient::inputLabel(int channel) const
 {
     if (channel < 0 || (uint32_t) channel >= region->header().inputs)

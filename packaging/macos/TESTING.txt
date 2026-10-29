@@ -1,0 +1,100 @@
+Inlet test build for macOS (unsigned)
+=====================================
+
+What this is: an AES67 virtual sound card. Every application on the Mac sees
+an audio device called "Inlet"; its inputs are AES67 streams from the network
+and its outputs are sent to the network as AES67 streams. A Manifold console
+(or any NMOS controller, such as Sluice) can find and route it.
+
+Needs: macOS 13 or later, a WIRED network interface on the AES67 network
+(Wi-Fi cannot carry the streams), and a PTP grandmaster on the network for
+clock lock; without one, Inlet runs on the computer's own clock and says so.
+
+Install
+-------
+1. Open Inlet-<version>-macos.pkg. The build is not notarised: if macOS
+   refuses to open it, Control-click it, choose Open, and confirm.
+2. Follow the installer (it asks for an administrator's password). It
+   restarts Core Audio, so any audio playing stops for a moment.
+3. The Inlet app opens. Its menu-bar icon (the Inlet mark) has a dot when
+   Inlet is running; the app's Status page says whether PTP is locked.
+   Installing over an earlier build is fine; settings are kept.
+
+Check
+-----
+- Inlet app, Status page: the network interface should be your wired AES67
+  interface. If not, choose it on the Settings page and press Apply.
+- Status page, Clock: "Locked to the grandmaster" when your network has one.
+- Audio MIDI Setup lists "Inlet" with 64 inputs and 64 outputs (by default).
+  Its Configure button opens the Inlet app.
+- In any application (a DAW, Music, Safari...), choose "Inlet" as the input
+  or output device, or as the Mac's own in System Settings > Sound. The Status
+  page lists the programs playing through Inlet under "Programs using Inlet".
+
+Receive (network -> Mac)
+------------------------
+- From a console or Sluice: route a sender to an Inlet receiver ("Net In 1" ...).
+  Net In k's channels are Inlet inputs (k-1)*8+1 ... k*8 by default.
+- Or in the Inlet app, Receivers page: pick a stream (heard by SAP or NMOS, or
+  pasted with "Add an SDP..."), select a receiver, "Play on this receiver".
+
+Send (Mac -> network)
+---------------------
+- Inlet outputs 1-8 go out as "Net Out 1", 9-16 as "Net Out 2", and so on,
+  announced by SAP and NMOS. Route them from the console or Sluice.
+- Several applications may play through Inlet at once: Core Audio mixes them.
+
+Sample rates
+------------
+- Inlet runs at the network's rate (48 kHz unless set otherwise on the
+  Settings page). Applications at other rates are converted by Core Audio.
+
+Start, Stop and quitting
+------------------------
+- Status page, "Stop Inlet", or the menu-bar menu's "Stop Inlet": inletd
+  quits. Inlet's senders leave the network and its receivers stop. The
+  "Inlet" device stays; applications using it hear silence.
+- "Start Inlet" (Status page or menu-bar menu): inletd starts again, and
+  applications using the device carry on by themselves.
+- Changing the channel counts or the sample rate on the Settings page changes
+  the device's shape; Core Audio tells applications using it.
+- Menu-bar menu, "Quit the Inlet app": the window and the icon go; the sound
+  card keeps running. Open Inlet from Applications to bring the app back.
+- "Quit Inlet completely": stops inletd, then quits the app. Inlet comes back
+  when you open the app and press "Start Inlet", at your next sign-in, or when
+  the Mac restarts (inletd starts with the Mac).
+
+Loopback self-test (no other device needed)
+-------------------------------------------
+1. Quit applications playing through Inlet (Core Audio mixes their outputs
+   with the test's).
+2. Inlet app, Receivers page: select "Net In 1", choose the stream "Net Out 1",
+   "Play on this receiver".
+3. In Terminal:
+     "/Library/Application Support/Inlet/bin/inlet-coreaudio-loopback" 15 256
+   It should end with "PASS: every sample came back, at one fixed latency".
+
+Where things are
+----------------
+- App:       /Applications/Inlet.app
+- Driver:    /Library/Audio/Plug-Ins/HAL/Inlet.driver
+- Program:   /Library/Application Support/Inlet/bin (inletd, the PTP helper, tools)
+- Settings:  /Library/Application Support/Inlet/inletd.json   (kept on uninstall)
+- Log:       /Library/Logs/Inlet/inletd.log  (the app's "Open Log" button)
+- Service:   launchd daemon co.meros.inletd
+- API:       http://127.0.0.1:8091/inlet/v1/status (and NMOS at /x-nmos/)
+
+Uninstall
+---------
+In Terminal:
+  sudo "/Library/Application Support/Inlet/uninstall.sh"
+(add --purge to remove the settings and the log too).
+
+Known limits of this build
+--------------------------
+- Not signed or notarised.
+- Built with Homebrew's GStreamer: runs on Apple silicon Macs with the macOS
+  version it was built on or later. A universal build needs the official
+  GStreamer framework.
+- Up to eight ASIO hosts and the Mac's applications (together, as one) play
+  out at once.

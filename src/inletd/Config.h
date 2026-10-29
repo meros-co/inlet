@@ -28,7 +28,7 @@ struct Config
     uint32_t inputs = 64, outputs = 64;
     uint32_t receivers = 8, receiverChannels = 8;
     uint32_t senders = 8, senderChannels = 8;
-    uint32_t linkOffsetUs = 0;       ///< 0: 3 ms on Windows, 1 ms elsewhere
+    uint32_t linkOffsetUs = 0;       ///< 0: 3 ms on Windows and macOS, 1 ms elsewhere
 
     // NMOS and the API
     int apiPort = 8091;

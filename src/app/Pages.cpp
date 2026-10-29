@@ -150,6 +150,7 @@ StatusPage::StatusPage(InletdClient& c) : Page(c, "Status")
     InletLookAndFeel::setVariant(stopButton, "secondary", "stop");
     InletLookAndFeel::setVariant(startButton, "primary", "play");
     InletLookAndFeel::setVariant(servicesButton, "ghost", "arrow-square-out");
+    servicesButton.setButtonText(service::openServicesLabel());
     stopButton.onClick = [this] { if (onStop) onStop(); };
     startButton.onClick = [this] { if (onStart) onStart(); };
     servicesButton.onClick = [] { service::openServices(); };
@@ -354,8 +355,8 @@ void StatusPage::paintOnline(juce::Graphics& g)
     auto r = programsRect;
     drawKicker(g, r.removeFromTop(16), "Programs using Inlet", colour::n500, type::kicker, 0.1f);
     r.removeFromTop(6);
-    const auto clients = st.getProperty("clients", {});
-    if (!clients.isArray() || clients.size() == 0)
+    const auto clients = programsIn(st);
+    if (clients.isEmpty())
     {
         g.setColour(colour::n500);
         g.setFont(assets::font(type::table));
@@ -413,7 +414,11 @@ void StatusPage::paintOffline(juce::Graphics& g)
     switch (serviceStatus)
     {
     case service::Status::NotInstalled:
+#if JUCE_WINDOWS
         text = u8("The sound card runs as a background service, and it isn\xe2\x80\x99t installed. Run install.cmd from the Inlet package.");
+#else
+        text = u8("The sound card runs as a background service, and it isn\xe2\x80\x99t installed. Install Inlet from its installer package.");
+#endif
         break;
     case service::Status::Starting:
         text = "The sound card is starting. This window connects on its own.";
