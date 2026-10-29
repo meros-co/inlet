@@ -17,15 +17,16 @@ target_sources(InletApp PRIVATE
     Main.cpp Assets.cpp InletdClient.cpp InletLookAndFeel.cpp Pages.cpp Widgets.cpp)
 
 # Inter (SIL OFL 1.1), the Phosphor icons (MIT), the app and tray icons, and
-# the ASIO Compatible logo for About (Steinberg's usage guidelines).
+# on Windows the ASIO Compatible logo for About (Steinberg's usage guidelines).
 file(GLOB INLET_APP_ASSETS CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/*.png
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/*.ttf
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/*.svg
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/tray/*.png)
-juce_add_binary_data(InletAppData SOURCES
-    ${INLET_APP_ASSETS}
-    ${PROJECT_SOURCE_DIR}/third_party/asiosdk/logo/ASIO-compatible-logo-Steinberg-TM-BW.png)
+if(WIN32)
+    list(APPEND INLET_APP_ASSETS ${PROJECT_SOURCE_DIR}/third_party/asiosdk/logo/ASIO-compatible-logo-Steinberg-TM-BW.png)
+endif()
+juce_add_binary_data(InletAppData SOURCES ${INLET_APP_ASSETS})
 
 target_compile_definitions(InletApp PRIVATE
     JUCE_WEB_BROWSER=0
