@@ -1,0 +1,7 @@
+{
+    global:
+        _snd_pcm_inlet_open;
+        __snd_pcm_inlet_open_dlsym_pcm_*;
+    local:
+        *;
+};
