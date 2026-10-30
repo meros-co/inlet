@@ -1,0 +1,23 @@
+# Inlet's service and Inlet in PipeWire, set up as the .deb and .rpm do: the
+# service on and started, and Inlet in PipeWire for every user from their next
+# PipeWire start. Settings in /var/lib/inlet stay after removal.
+
+post_install() {
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    systemctl enable --now inletd.service >/dev/null 2>&1 || true
+    systemctl --global enable inlet-pipewire.service >/dev/null 2>&1 || true
+}
+
+post_upgrade() {
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    systemctl restart inletd.service >/dev/null 2>&1 || true
+}
+
+pre_remove() {
+    systemctl disable --now inletd.service >/dev/null 2>&1 || true
+    systemctl --global disable inlet-pipewire.service >/dev/null 2>&1 || true
+}
+
+post_remove() {
+    systemctl daemon-reload >/dev/null 2>&1 || true
+}

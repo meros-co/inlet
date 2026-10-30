@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 Meros Inc.
+#
+# Arch Linux with what makepkg needs to build Inlet from packaging/linux/arch,
+# and a "build" user to run it (makepkg does not run as root).
+#
+#   docker build -t inlet-build:arch -f packaging/linux/docker/Dockerfile.arch packaging/linux/docker
+
+FROM archlinux:latest
+
+RUN pacman -Syu --noconfirm --needed base-devel cmake ninja git pkgconf \
+        alsa-lib libpipewire libx11 libxext libxrandr libxinerama libxcursor freetype2 fontconfig \
+        linuxptp iproute2 alsa-utils sudo \
+    && pacman -Scc --noconfirm \
+    && useradd -m build && echo 'build ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/build

@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 Meros Inc.
+#
+# Inlet for Arch Linux: makepkg -si in this directory. It builds the tagged
+# release from source (CMake fetches libsamplerate, nlohmann/json, cpp-httplib
+# and JUCE while building).
+
+pkgname=inlet
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="AES67 virtual sound card: PipeWire and ALSA devices on the network's PTP clock"
+arch=(x86_64 aarch64)
+url="https://github.com/meros-co/inlet"
+license=(AGPL-3.0-only)
+depends=(linuxptp alsa-lib libpipewire libx11 libxext libxrandr libxinerama libxcursor freetype2 fontconfig gcc-libs glibc)
+optdepends=('pipewire: Inlet as a PipeWire device'
+            'wireplumber: to link programs to Inlet in PipeWire')
+makedepends=(cmake ninja git pkgconf)
+backup=(etc/inlet/ptp4l.conf etc/alsa/conf.d/50-inlet.conf etc/xdg/autostart/inlet-tray.desktop)
+install=inlet.install
+source=("inlet::git+https://github.com/meros-co/inlet.git#tag=v${pkgver}")
+sha256sums=('SKIP')
+
+prepare() {
+    cd inlet
+    git submodule update --init --recursive
+}
+
+build() {
+    cmake -S inlet -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_TESTING=OFF
+    cmake --build build
+}
+
+package() {
+    DESTDIR="$pkgdir" cmake --install build --component inlet
+}
