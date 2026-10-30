@@ -31,11 +31,22 @@ add_subdirectory(third_party/meros-aes67)
 
 add_subdirectory(src/core)
 
-include(cmake/GStreamerNet.cmake)
-if(GSTNET_FOUND)
+# PTP: linuxptp's ptp4l on Linux, GStreamer's GstPtpClock elsewhere (and on
+# Linux too, with -DINLET_PTP_BACKEND=gstreamer).
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(INLET_PTP_BACKEND "linuxptp" CACHE STRING "PTP follower: linuxptp or gstreamer")
+else()
+    set(INLET_PTP_BACKEND "gstreamer" CACHE STRING "PTP follower: gstreamer")
+endif()
+if(INLET_PTP_BACKEND STREQUAL "linuxptp")
     add_subdirectory(src/ptp)
 else()
-    message(WARNING "GStreamer (gstreamer-net-1.0 >= 1.24) not found: inletd needs it for PTP")
+    include(cmake/GStreamerNet.cmake)
+    if(GSTNET_FOUND)
+        add_subdirectory(src/ptp)
+    else()
+        message(WARNING "GStreamer (gstreamer-net-1.0 >= 1.24) not found: inletd needs it for PTP")
+    endif()
 endif()
 
 add_subdirectory(src/inletd)
