@@ -1,0 +1,6 @@
+# Files that run or are read on Linux keep LF line endings in every checkout
+# (a Windows checkout with core.autocrlf would otherwise give them CRLF).
+*.sh                    text eol=lf
+packaging/linux/**      text eol=lf
+src/alsa/*.conf         text eol=lf
+src/alsa/exports.map    text eol=lf
