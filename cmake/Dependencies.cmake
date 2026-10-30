@@ -19,6 +19,9 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 FetchContent_MakeAvailable(libsamplerate)
 unset(CMAKE_POLICY_VERSION_MINIMUM)
 set(BUILD_TESTING ${_inlet_build_testing})
+# Linked into shared modules (the ALSA plugin) too, where compilers that do not
+# make position-independent code by default (Rocky Linux 9's) need it.
+set_target_properties(samplerate PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # nlohmann/json 3.11.3 (MIT): the control plane's JSON, as in Manifold.
 FetchContent_Declare(nlohmann_json

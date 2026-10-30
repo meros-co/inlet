@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 Meros Inc.
+#
+# Builds Inlet for Linux on Rocky Linux 9 and makes its .rpm, which installs
+# on RHEL, Rocky and Alma 9 and later, and on Fedora.
+#
+#   docker build -t inlet-build:rocky9 -f packaging/linux/docker/Dockerfile.rocky9 packaging/linux/docker
+
+FROM rockylinux:9
+
+RUN dnf install -y dnf-plugins-core epel-release && dnf config-manager --set-enabled crb \
+    && dnf install -y gcc-c++ cmake ninja-build pkgconf-pkg-config git rpm-build file \
+        alsa-lib-devel pipewire-devel \
+        libX11-devel libXext-devel libXrandr-devel libXinerama-devel libXcursor-devel freetype-devel fontconfig-devel \
+        linuxptp iproute alsa-utils \
+    && dnf clean all
