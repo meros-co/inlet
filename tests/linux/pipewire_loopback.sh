@@ -11,11 +11,19 @@
 #
 # Needs root (inletd), PipeWire, WirePlumber, pipewire-alsa and D-Bus.
 #
-#   tests/linux/pipewire_loopback.sh <build directory> [seconds]
+#   tests/linux/pipewire_loopback.sh <build directory | installed> [seconds]
+#
+# "installed": the programs of an installed inlet package, on the PATH.
 
 set -eu
 build=$1
 seconds=${2:-10}
+if [ "$build" = installed ]; then
+    inletd=inletd; loopback=inlet-alsa-loopback; inlet_pipewire=inlet-pipewire
+else
+    inletd="$build/src/inletd/inletd"; loopback="$build/tools/inlet-alsa-loopback"
+    inlet_pipewire="$build/src/pipewire/inlet-pipewire"
+fi
 work=$(mktemp -d)
 export XDG_RUNTIME_DIR="$work/run"
 mkdir -p "$XDG_RUNTIME_DIR"
@@ -29,7 +37,7 @@ cleanup() {
 trap cleanup EXIT
 
 printf '{"settings":{"apiPort":8099,"receivers":2,"senders":2,"inputs":16,"outputs":16}}' > "$work/inletd.json"
-"$build/src/inletd/inletd" --config "$work/inletd.json" > "$work/inletd.log" 2>&1 &
+"$inletd" --config "$work/inletd.json" > "$work/inletd.log" 2>&1 &
 pids+=($!)
 api() {
     exec 3<>/dev/tcp/127.0.0.1/8099 || return 1
@@ -46,8 +54,12 @@ api PUT /receivers/1 '{"streamId":"own:1"}'
 # monitor cannot do without: it is turned off.
 export XDG_CONFIG_HOME="$work/config"
 mkdir -p "$XDG_CONFIG_HOME/wireplumber/bluetooth.lua.d"
-# (Before 90-enable-all.lua, which turns everything on.)
-echo 'bluez_monitor.enabled = false' > "$XDG_CONFIG_HOME/wireplumber/bluetooth.lua.d/80-no-bluetooth.lua"
+# (Before 90-enable-all.lua, which turns everything on; WirePlumber 0.4.8, on
+# Ubuntu 22.04, has no `enabled` setting, so the monitor's enable is replaced.)
+cat > "$XDG_CONFIG_HOME/wireplumber/bluetooth.lua.d/80-no-bluetooth.lua" <<'LUA'
+bluez_monitor.enabled = false
+function bluez_monitor.enable() end
+LUA
 dbus-daemon --session --fork --address="unix:path=$XDG_RUNTIME_DIR/bus" --print-pid > "$work/dbus.pid"
 export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 pids+=("$(cat "$work/dbus.pid")")
@@ -56,7 +68,7 @@ pids+=($!)
 sleep 2
 wireplumber > "$work/wireplumber.log" 2>&1 &
 pids+=($!)
-"$build/src/pipewire/inlet-pipewire" > "$work/inlet-pipewire.log" 2>&1 &
+"$inlet_pipewire" > "$work/inlet-pipewire.log" 2>&1 &
 pids+=($!)
 sleep 3
 cat "$work/inlet-pipewire.log"
@@ -64,6 +76,6 @@ wpctl status 2>/dev/null | sed -n '/Sinks:/,/Streams:/p' | head -12
 
 status=0
 for rate in 48000 44100; do
-    timeout $((seconds + 30)) "$build/tools/inlet-alsa-loopback" pipewire "$seconds" 256 "$rate" 2 || status=1
+    timeout $((seconds + 30)) "$loopback" pipewire "$seconds" 256 "$rate" 2 || status=1
 done
 exit $status
