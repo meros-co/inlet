@@ -12,6 +12,7 @@ add_library(inlet_core STATIC
     src/RateConverter.cpp
     src/SharedRegion.cpp
     src/DeviceClient.cpp
+    src/HostAudio.cpp
 )
 target_include_directories(inlet_core PUBLIC include)
 target_link_libraries(inlet_core PUBLIC meros::aes67 PRIVATE SampleRate::samplerate)

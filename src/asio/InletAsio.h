@@ -52,7 +52,7 @@
 
 namespace inlet
 {
-class RateConverter;
+class HostAudio;
 
 // {C228C42A-9291-4AEB-830B-16B7963F899E}
 inline constexpr CLSID kInletAsioClsid = { 0xc228c42a, 0x9291, 0x4aeb, { 0x83, 0x0b, 0x16, 0xb7, 0x96, 0x3f, 0x89, 0x9e } };
@@ -106,13 +106,10 @@ private:
     /** One direction's conversion between the host's rate and the device's. */
     struct Conversion
     {
-        std::unique_ptr<RateConverter> conv;
-        std::vector<int> channels;          // indices into `channels`
-        std::vector<float> in, out;         // interleaved
-        std::vector<int32_t> scratch;
-        uint64_t devicePos = 0;             // next device frame read or written
-        uint64_t nextHost = 0;              // the host sample this continues from
-        bool anchored = false;
+        std::unique_ptr<HostAudio> audio;
+        std::vector<int> channels;                 // indices into `channels`
+        std::vector<std::vector<float>> buffers;   // one per channel, a period long
+        std::vector<float*> pointers;
     };
 
     DeviceClient* client() const { return current.load(); }

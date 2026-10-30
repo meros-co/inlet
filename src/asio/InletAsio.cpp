@@ -4,7 +4,7 @@
 #include "InletAsio.h"
 
 #include "inlet/DeviceClient.h"
-#include "inlet/RateConverter.h"
+#include "inlet/HostAudio.h"
 
 #include <algorithm>
 #include <cmath>
@@ -23,9 +23,6 @@ namespace
 
 constexpr long kDriverVersion = 2;
 constexpr int64_t kReattachEveryNs = 500'000'000;
-/** Channels (both ways) x rate up to which the converters use medium quality. */
-constexpr uint64_t kMediumQualityWork = 128ull * 48000;
-constexpr float kFrom24 = 1.0f / 8388608.0f;
 constexpr float kFrom32 = 1.0f / 2147483648.0f;
 
 std::string hostName()
@@ -61,10 +58,6 @@ void split(uint64_t v, unsigned long& hi, unsigned long& lo)
 int32_t toInt32(float v)
 {
     return (int32_t) std::lrint(std::clamp((double) v, -1.0, 2147483647.0 / 2147483648.0) * 2147483648.0);
-}
-int32_t toInt24(float v)
-{
-    return (int32_t) std::lrint(std::clamp((double) v, -1.0, 8388607.0 / 8388608.0) * 8388608.0);
 }
 
 } // namespace
@@ -185,9 +178,16 @@ ASIOError InletAsio::getLatencies(long* inputLatency, long* outputLatency)
     long inExtra = c->linkOffsetFrames(), outExtra = 0;
     if (converting())
     {
-        const uint32_t inLead = inputs.conv ? inputs.conv->leadFrames() : 0;
-        inExtra = (long) std::ceil((double) (c->linkOffsetFrames() + inLead) * rate() / deviceRate());
-        outExtra = outputs.conv ? (long) outputs.conv->leadFrames() : 0;
+        // Each direction's converter says what it adds; before the buffers
+        // exist, a converter of the same kind is asked.
+        if (inputs.audio)
+            inExtra = (long) inputs.audio->inputLatency(c->linkOffsetFrames());
+        else
+            inExtra = (long) HostAudio(true, { 0 }, rate(), deviceRate(), (uint32_t) frames).inputLatency(c->linkOffsetFrames());
+        if (outputs.audio)
+            outExtra = (long) outputs.audio->outputExtraLatency();
+        else
+            outExtra = (long) HostAudio(false, { 0 }, rate(), deviceRate(), (uint32_t) frames).outputExtraLatency();
     }
     if (inputLatency)
         *inputLatency = frames + inExtra;
@@ -346,41 +346,30 @@ ASIOError InletAsio::createBuffers(ASIOBufferInfo* bufferInfos, long numChannels
 
 void InletAsio::buildConversions()
 {
-    for (auto* conv : { &inputs, &outputs })
-    {
-        conv->conv.reset();
-        conv->channels.clear();
-        conv->anchored = false;
-    }
+    inputs.audio.reset();
+    outputs.audio.reset();
+    inputs.channels.clear();
+    outputs.channels.clear();
     if (!converting())
         return;
+    std::vector<int> in, out;
     for (int i = 0; i < (int) channels.size(); ++i)
-        (channels[(size_t) i].isInput ? inputs : outputs).channels.push_back(i);
-    const long frames = bufferFrames;
-    // libsamplerate's medium sinc where it costs little; its fastest (still a
-    // band-limited sinc) where the channels and the rate would make the
-    // medium one take a good part of a core: about 64 channels each way at
-    // 48 kHz, or 16 at 192.
-    const uint64_t work = (uint64_t) channels.size() * std::max(rate(), deviceRate());
-    const int quality = work <= kMediumQualityWork ? 1 : 2;
-    if (!inputs.channels.empty())
     {
-        const int n = (int) inputs.channels.size();
-        inputs.conv = std::make_unique<RateConverter>(deviceRate(), rate(), n, quality);
-        // Device frames per offer: a period's worth at the ratio, and slack.
-        const long cap = (long) std::ceil(frames / inputs.conv->ratio()) + (long) inputs.conv->leadFrames() + 64;
-        inputs.in.assign((size_t) cap * n, 0.0f);
-        inputs.out.assign((size_t) frames * n, 0.0f);
-        inputs.scratch.assign((size_t) cap, 0);
+        Conversion& cv = channels[(size_t) i].isInput ? inputs : outputs;
+        cv.channels.push_back(i);
+        (channels[(size_t) i].isInput ? in : out).push_back((int) channels[(size_t) i].index);
     }
-    if (!outputs.channels.empty())
+    const int quality = HostAudio::qualityFor(channels.size(), rate(), deviceRate());
+    for (auto* cv : { &inputs, &outputs })
     {
-        const int n = (int) outputs.channels.size();
-        outputs.conv = std::make_unique<RateConverter>(rate(), deviceRate(), n, quality);
-        const long cap = (long) std::ceil(frames * outputs.conv->ratio()) + 64;
-        outputs.in.assign((size_t) frames * n, 0.0f);
-        outputs.out.assign((size_t) cap * n, 0.0f);
-        outputs.scratch.assign((size_t) cap, 0);
+        const bool isInput = cv == &inputs;
+        if (cv->channels.empty())
+            continue;
+        cv->audio = std::make_unique<HostAudio>(isInput, isInput ? in : out, rate(), deviceRate(), (uint32_t) bufferFrames, quality);
+        cv->buffers.assign(cv->channels.size(), std::vector<float>((size_t) bufferFrames, 0.0f));
+        cv->pointers.clear();
+        for (auto& b : cv->buffers)
+            cv->pointers.push_back(b.data());
     }
 }
 
@@ -390,11 +379,8 @@ ASIOError InletAsio::disposeBuffers()
         engine->stop();
     engine.reset();
     channels.clear();
-    for (auto* conv : { &inputs, &outputs })
-    {
-        conv->conv.reset();
-        conv->channels.clear();
-    }
+    inputs.audio.reset();
+    outputs.audio.reset();
     callbacks = nullptr;
     bufferFrames = 0;
     // Regions left behind by restarts of inletd go now; the current one stays.
@@ -413,7 +399,9 @@ ASIOError InletAsio::start()
     pendingOutput = false;
     hostUsesOutputReady = false;
     resetRequested = false;
-    inputs.anchored = outputs.anchored = false;
+    for (auto* cv : { &inputs, &outputs })
+        if (cv->audio)
+            cv->audio->reset();
     for (auto& ch : channels)
         if (!ch.isInput)
         {
@@ -494,40 +482,14 @@ void InletAsio::readInputHalf(int h, uint64_t hostStart)
         return;
     }
     Conversion& cv = inputs;
-    if (!cv.conv)
+    if (!cv.audio)
         return;
-    const int n = (int) cv.channels.size();
-    if (!cv.anchored || hostStart != cv.nextHost)
+    cv.audio->read(*c, hostStart, frames, cv.pointers.data());
+    for (size_t k = 0; k < cv.channels.size(); ++k)
     {
-        // A fresh stream: the device position of this period's first frame,
-        // less the link offset, and less what the converter reads ahead.
-        cv.conv->reset();
-        cv.devicePos = convertPosition(hostStart, rate(), deviceRate()) - (uint64_t) c->linkOffsetFrames()
-                     - cv.conv->leadFrames();
-        cv.anchored = true;
-    }
-    cv.nextHost = hostStart + (uint64_t) frames;
-    const long cap = (long) cv.scratch.size();
-    long produced = 0;
-    for (int guard = 0; produced < frames && guard < 64; ++guard)
-    {
-        const long offer = std::min(cv.conv->inputFor(frames - produced), cap);
-        for (int k = 0; k < n; ++k)
-        {
-            c->readInputRaw(cv.devicePos, (int) channels[(size_t) cv.channels[(size_t) k]].index, cv.scratch.data(), (int) offer);
-            for (long f = 0; f < offer; ++f)
-                cv.in[(size_t) (f * n + k)] = (float) cv.scratch[(size_t) f] * kFrom24;
-        }
-        long used = 0;
-        produced += cv.conv->process(cv.in.data(), offer, cv.out.data() + produced * n, frames - produced, used);
-        cv.devicePos += (uint64_t) used;
-    }
-    for (int k = 0; k < n; ++k)
-    {
-        int32_t* dst = channels[(size_t) cv.channels[(size_t) k]].halves[h].data();
-        for (long f = 0; f < produced; ++f)
-            dst[f] = toInt32(cv.out[(size_t) (f * n + k)]);
-        std::fill(dst + produced, dst + frames, 0);
+        int32_t* dst = channels[(size_t) cv.channels[k]].halves[h].data();
+        for (int f = 0; f < frames; ++f)
+            dst[f] = toInt32(cv.buffers[k][(size_t) f]);
     }
 }
 
@@ -544,42 +506,15 @@ void InletAsio::writeOutputHalf(int h, uint64_t firstSample)
         return;
     }
     Conversion& cv = outputs;
-    if (!cv.conv)
+    if (!cv.audio)
         return;
-    const int n = (int) cv.channels.size();
-    if (!cv.anchored || firstSample != cv.nextHost)
+    for (size_t k = 0; k < cv.channels.size(); ++k)
     {
-        // A fresh stream, played from this half's first frame plus what the
-        // converter holds back for its look-ahead.
-        cv.conv->reset();
-        cv.devicePos = convertPosition(firstSample, rate(), deviceRate())
-                     + (uint64_t) std::ceil(cv.conv->leadFrames() * cv.conv->ratio());
-        cv.anchored = true;
-    }
-    cv.nextHost = firstSample + (uint64_t) frames;
-    for (int k = 0; k < n; ++k)
-    {
-        const int32_t* src = channels[(size_t) cv.channels[(size_t) k]].halves[h].data();
+        const int32_t* src = channels[(size_t) cv.channels[k]].halves[h].data();
         for (int f = 0; f < frames; ++f)
-            cv.in[(size_t) (f * n + k)] = (float) src[f] * kFrom32;
+            cv.buffers[k][(size_t) f] = (float) src[f] * kFrom32;
     }
-    const long cap = (long) cv.scratch.size();
-    long consumed = 0;
-    for (int guard = 0; consumed < frames && guard < 64; ++guard)
-    {
-        long used = 0;
-        const long made = cv.conv->process(cv.in.data() + consumed * n, frames - consumed, cv.out.data(), cap, used);
-        consumed += used;
-        for (int k = 0; k < n; ++k)
-        {
-            for (long f = 0; f < made; ++f)
-                cv.scratch[(size_t) f] = toInt24(cv.out[(size_t) (f * n + k)]);
-            c->writeOutputRaw(cv.devicePos, (int) channels[(size_t) cv.channels[(size_t) k]].index, cv.scratch.data(), (int) made);
-        }
-        cv.devicePos += (uint64_t) made;
-        if (used == 0 && made == 0)
-            break;
-    }
+    cv.audio->write(*c, firstSample, frames, cv.pointers.data());
 }
 
 void InletAsio::reattach(int64_t nowMono)
@@ -627,7 +562,9 @@ void InletAsio::onPeriod(const PeriodEngine::Period& p)
     // and the host is told so.
     if (p.resynced)
     {
-        inputs.anchored = outputs.anchored = false;
+        for (auto* cv : { &inputs, &outputs })
+            if (cv->audio)
+                cv->audio->reset();
         message(kAsioResyncRequest);
     }
 
