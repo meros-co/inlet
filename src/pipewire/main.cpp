@@ -121,8 +121,7 @@ struct Device
     std::vector<std::unique_ptr<DeviceClient>> clients;   // the last is current
     std::atomic<DeviceClient*> client { nullptr };
     Node sinkNode, sourceNode;
-    pw_data_loop* dataLoop = nullptr;           // where the nodes process, and their cycles are triggered
-    std::atomic<pw_stream*> driver { nullptr };   // the sink, for the clock to trigger
+    std::mutex nodesLock;   // the clock triggers the sink while the main loop does not remake it
 
     // The driver's view of the graph, from the sink's position.
     std::atomic<spa_io_position*> position { nullptr };
@@ -323,17 +322,6 @@ void destroyNode(Node& n)
 
 /* ---- the clock: a thread that triggers the sink's cycles on the media clock -------------------- */
 
-/** On the data loop: one cycle of the graph, which the sink drives. */
-int triggerCycle(spa_loop*, bool, uint32_t, const void*, size_t, void* data)
-{
-    Device* d = static_cast<Device*>(data);
-    // (The main loop clears the driver before it destroys the sink, which
-    // runs on this loop after this.)
-    if (pw_stream* s = d->driver.load())
-        pw_stream_trigger_process(s);
-    return 0;
-}
-
 /** inletd stopped or restarted: find the one running now. */
 void reattach(Device& d, int64_t now)
 {
@@ -416,13 +404,15 @@ void runClock(Device& d)
             pos->clock.rate_diff = 1.0;
             pos->clock.next_nsec = (uint64_t) clk.monoAt(ptpAtSample(pc->periodEnd() + quantum, rate));
         }
-        // On the data loop, where the main loop's remaking the sink cannot
-        // race it, and only once the sink is streaming: PipeWire 1.x crashes
-        // on a cycle triggered while it is being set up.
-        if (d.driver.load() != nullptr && d.sinkNode.streaming.load())
+        // Only once the sink is streaming: PipeWire 1.x crashes on a cycle
+        // triggered while it is being set up.
         {
-            d.triggers++;
-            pw_loop_invoke(pw_data_loop_get_loop(d.dataLoop), triggerCycle, 0, nullptr, 0, false, &d);
+            std::lock_guard<std::mutex> lock(d.nodesLock);
+            if (d.sinkNode.stream != nullptr && d.sinkNode.streaming.load())
+            {
+                d.triggers++;
+                pw_stream_trigger_process(d.sinkNode.stream);
+            }
         }
         c->clock(clk);
         if (pc->advance(clk, monoNowNs()))
@@ -458,7 +448,7 @@ void checkShape(void* data, uint64_t)
     if (d->sinkNode.stream != nullptr && !d->rebuild)
         return;
     d->rebuild = false;
-    d->driver = nullptr;
+    std::lock_guard<std::mutex> lock(d->nodesLock);
     destroyNode(d->sinkNode);
     destroyNode(d->sourceNode);
     d->position = nullptr;
@@ -466,11 +456,8 @@ void checkShape(void* data, uint64_t)
         || !makeNode(*d, d->sourceNode, false, c->inputs(), c->sampleRate()))
         std::fprintf(stderr, "inlet-pipewire: could not make the nodes\n");
     else
-    {
-        d->driver = d->sinkNode.stream;
         std::fprintf(stderr, "inlet-pipewire: Inlet is in PipeWire: %u outputs, %u inputs at %u Hz\n", c->outputs(),
                      c->inputs(), c->sampleRate());
-    }
 }
 
 } // namespace
@@ -485,7 +472,6 @@ int main(int argc, char** argv)
     std::signal(SIGTERM, onSignal);
     d.context = pw_context_new(pw_main_loop_get_loop(d.loop), nullptr, 0);
     d.core = d.context ? pw_context_connect(d.context, nullptr, 0) : nullptr;
-    d.dataLoop = d.context ? pw_context_get_data_loop(d.context) : nullptr;
     if (d.core == nullptr)
     {
         std::fprintf(stderr, "inlet-pipewire: PipeWire is not running for this user\n");
