@@ -36,13 +36,16 @@
 #include <spa/pod/builder.h>
 
 #include <atomic>
+#include <cmath>
 #include <csignal>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 #include <unistd.h>
@@ -98,6 +101,11 @@ struct Node
     std::unique_ptr<HostAudio> audio;
     uint32_t audioRate = 0;
     uint64_t resyncsSeen = 0;
+    uint64_t lastStart = 0;   // the period last produced
+    bool produced = false;
+    std::atomic<spa_io_position*> position { nullptr };   // this node's view of its driver
+    std::atomic<uint32_t> lastFrames { 0 };
+    std::atomic<float> lastPeak { 0.0f };
     std::vector<std::vector<float>> buffers;
     std::vector<float*> pointers;
 };
@@ -118,6 +126,8 @@ struct Device
     std::atomic<uint32_t> graphRate { 0 };
     std::atomic<uint64_t> cycleStart { 0 };     // the period being processed, at the graph rate
     std::atomic<uint64_t> resyncs { 0 };   // the schedule re-anchored this many times
+    // How it goes, for INLET_PIPEWIRE_DEBUG: cycles triggered, and processed.
+    std::atomic<uint64_t> triggers { 0 }, sinkCycles { 0 }, sourceCycles { 0 };
 
     std::atomic<bool> running { true };
     std::thread timer;
@@ -134,6 +144,14 @@ void process(void* data)
     Node* n = static_cast<Node*>(data);
     Device* d = n->device;
     DeviceClient* c = d->cur();
+    (n->sink ? d->sinkCycles : d->sourceCycles)++;
+    // One period per cycle. (PipeWire before 0.3.6x asks an output stream
+    // twice in a cycle; the second would repeat the period.)
+    const uint64_t start = d->cycleStart.load();
+    if (!n->sink && n->produced && start == n->lastStart)
+        return;
+    n->lastStart = start;
+    n->produced = true;
     pw_buffer* b = pw_stream_dequeue_buffer(n->stream);
     if (b == nullptr)
         return;
@@ -163,7 +181,6 @@ void process(void* data)
         n->audio->reset();
     }
 
-    const uint64_t start = d->cycleStart.load();
     auto* samples = static_cast<float*>(sd.data);
     if (n->sink)
     {
@@ -177,7 +194,14 @@ void process(void* data)
     else
     {
         uint32_t frames = std::min(d->quantum.load(), sd.maxsize / stride);
-        if (b->requested != 0)
+        // pw_buffer.requested is newer than PipeWire 0.3.48 (Ubuntu 22.04):
+        // read only where the library running has it.
+        static const bool hasRequested = [] {
+            int major = 0, minor = 0, micro = 0;
+            std::sscanf(pw_get_library_version(), "%d.%d.%d", &major, &minor, &micro);
+            return std::make_tuple(major, minor, micro) >= std::make_tuple(0, 3, 49);
+        }();
+        if (hasRequested && b->requested != 0)
             frames = std::min<uint32_t>(frames, (uint32_t) b->requested);
         frames = std::min(frames, kMaxQuantum);
         n->audio->read(*c, start, (int) frames, n->pointers.data());
@@ -187,6 +211,11 @@ void process(void* data)
         sd.chunk->offset = 0;
         sd.chunk->stride = (int32_t) stride;
         sd.chunk->size = frames * stride;
+        float peak = 0.0f;
+        for (uint32_t i = 0; i < frames * n->channels; ++i)
+            peak = std::max(peak, std::fabs(samples[i]));
+        n->lastFrames = frames;
+        n->lastPeak = peak;
     }
     pw_stream_queue_buffer(n->stream, b);
 }
@@ -194,8 +223,12 @@ void process(void* data)
 void ioChanged(void* data, uint32_t id, void* area, uint32_t size)
 {
     Node* n = static_cast<Node*>(data);
-    if (n->sink && id == SPA_IO_Position)
-        n->device->position.store(size >= sizeof(spa_io_position) ? static_cast<spa_io_position*>(area) : nullptr);
+    if (id != SPA_IO_Position)
+        return;
+    spa_io_position* pos = size >= sizeof(spa_io_position) ? static_cast<spa_io_position*>(area) : nullptr;
+    n->position.store(pos);
+    if (n->sink)
+        n->device->position.store(pos);
 }
 
 void stateChanged(void* data, pw_stream_state, pw_stream_state state, const char* error)
@@ -351,7 +384,10 @@ void runClock(Device& d)
             pos->clock.next_nsec = (uint64_t) clk.monoAt(ptpAtSample(pc->periodEnd() + quantum, rate));
         }
         if (d.sinkNode.stream != nullptr)
+        {
             pw_stream_trigger_process(d.sinkNode.stream);
+            d.triggers++;
+        }
         c->clock(clk);
         if (pc->advance(clk, monoNowNs()))
             d.resyncs++;
@@ -364,6 +400,22 @@ void runClock(Device& d)
 void checkShape(void* data, uint64_t)
 {
     Device* d = static_cast<Device*>(data);
+    static const bool debug = std::getenv("INLET_PIPEWIRE_DEBUG") != nullptr;
+    static int ticks = 0;
+    if (debug && ++ticks % 8 == 0 && d->sinkNode.stream != nullptr)
+        std::fprintf(stderr, "inlet-pipewire: driving %d, %llu cycles triggered, %llu sink and %llu source processed, quantum %u at %u Hz\n",
+                     pw_stream_is_driving(d->sinkNode.stream) ? 1 : 0, (unsigned long long) d->triggers.load(),
+                     (unsigned long long) d->sinkCycles.load(), (unsigned long long) d->sourceCycles.load(),
+                     d->quantum.load(), d->graphRate.load());
+    if (debug && ticks % 8 == 0 && d->sourceNode.stream != nullptr)
+    {
+        spa_io_position* sp = d->sourceNode.position.load();
+        spa_io_position* kp = d->sinkNode.position.load();
+        std::fprintf(stderr, "inlet-pipewire: sink node %u driver %u, source node %u driver %u; source last %u frames, peak %.3f\n",
+                     pw_stream_get_node_id(d->sinkNode.stream), kp ? kp->clock.id : 0,
+                     pw_stream_get_node_id(d->sourceNode.stream), sp ? sp->clock.id : 0,
+                     d->sourceNode.lastFrames.load(), d->sourceNode.lastPeak.load());
+    }
     DeviceClient* c = d->cur();
     if (c == nullptr)
         return;
