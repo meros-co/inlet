@@ -1,0 +1,11 @@
+#!/bin/sh
+# Inlet, before it is removed: the service stopped and off, and no longer
+# started with PipeWire. (An upgrade leaves them; postinst restarts the service.)
+set -e
+if [ "$1" = remove ]; then
+    if [ -d /run/systemd/system ]; then
+        systemctl disable --now inletd.service >/dev/null 2>&1 || true
+    fi
+    systemctl --global disable inlet-pipewire.service >/dev/null 2>&1 || true
+fi
+exit 0

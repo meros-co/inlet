@@ -1,0 +1,11 @@
+// Lets the person at the computer start and stop Inlet's service without an
+// administrator password, as the Inlet app's Start Inlet and Stop Inlet do.
+// (Where polkit has no JavaScript rules, Ubuntu 22.04, it asks for one.)
+polkit.addRule(function (action, subject) {
+    if (action.id == "org.freedesktop.systemd1.manage-units"
+        && action.lookup("unit") == "inletd.service"
+        && ["start", "stop", "restart"].indexOf(action.lookup("verb")) >= 0
+        && subject.local && subject.active) {
+        return polkit.Result.YES;
+    }
+});

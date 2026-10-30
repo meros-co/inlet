@@ -1,0 +1,11 @@
+#!/bin/sh
+# Inlet, removed: systemd forgets its units. Settings in /var/lib/inlet stay
+# unless the package is purged.
+set -e
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload >/dev/null 2>&1 || true
+fi
+if [ "$1" = purge ]; then
+    rm -rf /var/lib/inlet
+fi
+exit 0

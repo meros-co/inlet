@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Inlet
+GenericName=AES67 virtual sound card
+Comment=Settings and status for Inlet, the AES67 virtual sound card
+Exec=inlet
+Icon=inlet
+Terminal=false
+Categories=AudioVideo;Audio;Settings;
+Keywords=AES67;audio;network;PTP;NMOS;sound card;

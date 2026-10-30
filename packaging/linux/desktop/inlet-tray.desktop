@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Inlet
+Comment=Inlet's status in the system tray
+Exec=inlet --tray
+Icon=inlet
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

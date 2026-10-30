@@ -1,0 +1,28 @@
+# Inlet's service: the per-machine process that owns the network for the
+# AES67 virtual sound card (PTP through linuxptp, the streams, SAP, NMOS).
+# Stopping it from the Inlet app (or `systemctl stop inletd`) is a clean exit,
+# which is not restarted; a crash is.
+
+[Unit]
+Description=Inlet AES67 virtual sound card
+Documentation=https://github.com/meros-co/inlet
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/inletd
+Restart=on-failure
+RestartSec=2
+# Settings in /var/lib/inlet; ptp4l's socket, when Inlet runs its own, in /run/inlet.
+StateDirectory=inlet
+RuntimeDirectory=inlet
+# The pacer and the receive path run at real-time priority.
+LimitRTPRIO=95
+LimitMEMLOCK=infinity
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

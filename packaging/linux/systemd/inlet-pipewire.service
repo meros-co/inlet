@@ -1,0 +1,18 @@
+# Inlet in PipeWire for one user: its sink and source, driven by the PTP media
+# clock. Started with PipeWire; it waits for Inlet's service when that is not
+# running, and follows it when it restarts.
+
+[Unit]
+Description=Inlet AES67 virtual sound card in PipeWire
+Documentation=https://github.com/meros-co/inlet
+After=pipewire.service wireplumber.service
+BindsTo=pipewire.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/inlet-pipewire
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=pipewire.service

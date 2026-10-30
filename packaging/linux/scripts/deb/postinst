@@ -1,0 +1,13 @@
+#!/bin/sh
+# Inlet, after installing or upgrading: the service on, started now and at
+# every boot; Inlet in PipeWire for every user, from their next PipeWire start.
+set -e
+if [ "$1" = configure ]; then
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload >/dev/null 2>&1 || true
+        systemctl enable inletd.service >/dev/null 2>&1 || true
+        systemctl restart inletd.service >/dev/null 2>&1 || true
+    fi
+    systemctl --global enable inlet-pipewire.service >/dev/null 2>&1 || true
+fi
+exit 0

@@ -1,0 +1,3 @@
+@CMAKE_INSTALL_FULL_SYSCONFDIR@/inlet/ptp4l.conf
+@CMAKE_INSTALL_FULL_SYSCONFDIR@/alsa/conf.d/50-inlet.conf
+@CMAKE_INSTALL_FULL_SYSCONFDIR@/xdg/autostart/inlet-tray.desktop
