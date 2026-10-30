@@ -422,7 +422,12 @@ nlohmann::json Engine::Impl::clientsJson() const
         for (auto& layer : region->header().outputLayers)
             writesOutputs = writesOutputs || layer.load() == (uint32_t) i + 1;
         const auto kind = (shm::ClientKind) slots[i].kind.load();
-        out.push_back({ { "kind", kind == shm::ClientKind::Asio ? "asio" : kind == shm::ClientKind::CoreAudio ? "coreaudio" : "other" },
+        const char* kindName = kind == shm::ClientKind::Asio        ? "asio"
+                             : kind == shm::ClientKind::CoreAudio ? "coreaudio"
+                             : kind == shm::ClientKind::Alsa      ? "alsa"
+                             : kind == shm::ClientKind::PipeWire  ? "pipewire"
+                                                                  : "other";
+        out.push_back({ { "kind", kindName },
                         { "app", std::string(slots[i].app, strnlen(slots[i].app, shm::kLabelBytes)) },
                         { "pid", slots[i].pid.load() }, { "running", slots[i].running.load() != 0 },
                         { "bufferFrames", slots[i].bufferFrames.load() }, { "periods", slots[i].periods.load() },

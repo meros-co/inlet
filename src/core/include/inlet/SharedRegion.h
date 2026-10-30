@@ -59,7 +59,7 @@ constexpr int kMaxClients = 16;
 constexpr int kOutputLayers = 8;
 constexpr int kLabelBytes = 64;
 
-enum class ClientKind : uint32_t { None = 0, Asio = 1, CoreAudio = 2 };
+enum class ClientKind : uint32_t { None = 0, Asio = 1, CoreAudio = 2, Alsa = 3, PipeWire = 4 };
 
 struct alignas(64) ClientSlot
 {
