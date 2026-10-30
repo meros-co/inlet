@@ -4,7 +4,11 @@
 // inlet-ptp-probe: follows PTP for a while and prints what Inlet's clock
 // would do. Diagnostic only.
 //
-//   inlet-ptp-probe [--domain N] [--interface NAME|ADDR] [--seconds S]
+//   inlet-ptp-probe [--domain N] [--interface NAME|ADDR] [--seconds S] [--against-real-time]
+//
+// --against-real-time: also prints the mapping less this computer's real-time
+// clock plus 37 s, for a test grandmaster on the same machine whose PTP time is
+// its real time on the TAI scale (a software-stamping ptp4l, say).
 
 #include "inlet/Clock.h"
 #include "inlet/ClockDiscipline.h"
@@ -33,6 +37,7 @@ static const char* stateName(ClockState s)
 int main(int argc, char** argv)
 {
     int domain = 0, seconds = 30;
+    bool againstRealTime = false;
     std::vector<std::string> interfaces;
     for (int i = 1; i < argc; ++i)
     {
@@ -42,9 +47,12 @@ int main(int argc, char** argv)
             interfaces.push_back(argv[++i]);
         else if (!std::strcmp(argv[i], "--seconds") && i + 1 < argc)
             seconds = std::atoi(argv[++i]);
+        else if (!std::strcmp(argv[i], "--against-real-time"))
+            againstRealTime = true;
         else
         {
-            std::fprintf(stderr, "usage: %s [--domain N] [--interface NAME|ADDR] [--seconds S]\n", argv[0]);
+            std::fprintf(stderr, "usage: %s [--domain N] [--interface NAME|ADDR] [--seconds S] [--against-real-time]\n",
+                         argv[0]);
             return 2;
         }
     }
@@ -73,11 +81,21 @@ int main(int argc, char** argv)
         if (t % 10 != 9)
             continue;
         const PtpStatus st = ptp->status();
-        // The published mapping against GStreamer's own reading of PTP time.
-        const int64_t gstPtp = ptp->ptpNowNs();
+        // The published mapping against the follower's own reading of PTP time.
+        const int64_t ownPtp = ptp->ptpNowNs();
         const int64_t mapPtp = s.ptpAt(monoNowNs());
-        if (gstPtp >= 0)
-            std::printf("      mapping minus GStreamer: %lld ns\n", (long long) (mapPtp - gstPtp));
+        if (ownPtp >= 0)
+            std::printf("      mapping minus the follower: %lld ns\n", (long long) (mapPtp - ownPtp));
+        if (againstRealTime)
+        {
+            const int64_t a = monoNowNs();
+            const int64_t real = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                     std::chrono::system_clock::now().time_since_epoch()).count();
+            std::printf("      mapping minus real time + 37 s: %lld ns\n",
+                        (long long) (s.ptpAt(a) - (real + 37'000'000'000LL)));
+        }
+        if (!st.detail.empty() && t == 9)
+            std::printf("      %s\n", st.detail.c_str());
         std::printf("%3ds  %-8s epoch %u  gm %s  synced %d  path %lld ns  disc %lld ns  r2 %.4f  rate %+.3f ppm  updates %llu\n",
                     (t + 1) / 10, stateName(s.state), s.epoch,
                     st.gmPresent ? PtpStatus::identityText(st.gmIdentity).c_str() : "none", st.synced ? 1 : 0,
