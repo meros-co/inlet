@@ -24,14 +24,6 @@
 namespace inlet
 {
 
-std::string PtpStatus::identityText(const uint8_t id[8])
-{
-    char buf[24];
-    std::snprintf(buf, sizeof buf, "%02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X", id[0], id[1], id[2], id[3], id[4],
-                  id[5], id[6], id[7]);
-    return buf;
-}
-
 namespace
 {
 
@@ -205,6 +197,7 @@ std::unique_ptr<PtpFollower> PtpFollower::open(int domain, const std::vector<std
         return nullptr;
     }
     impl->status.available = true;
+    impl->status.source = "gstreamer";
     impl->internalMinusMono = measureInternalMinusMono();
     impl->haveOffset = true;
     return std::unique_ptr<PtpFollower>(new PtpFollower(std::move(impl)));

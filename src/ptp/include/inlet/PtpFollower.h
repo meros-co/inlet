@@ -3,7 +3,9 @@
 #pragma once
 
 /*
- * Inlet's PTP follower: GStreamer's GstPtpClock (libgstnet), used directly.
+ * Inlet's PTP follower. On Linux it is linuxptp's ptp4l (PtpFollowerLinuxptp.cpp:
+ * the ptp4l already running, or one of Inlet's own). Elsewhere it is
+ * GStreamer's GstPtpClock (libgstnet), used directly, as below.
  *
  * GstPtpClock is a slave-only PTPv2 ordinary clock: multicast, end-to-end,
  * any domain, best-master selection, no change to the system clock. Its helper
@@ -30,6 +32,8 @@ struct PtpStatus
 {
     bool available = false;        ///< the PTP subsystem started
     std::string reason;            ///< why not, when not
+    std::string source;            ///< what follows PTP: "linuxptp" or "gstreamer"
+    std::string detail;            ///< which ptp4l, on which interface, stamping how
     bool synced = false;
     int domain = 0;
     bool gmPresent = false;

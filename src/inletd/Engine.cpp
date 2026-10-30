@@ -375,7 +375,12 @@ nlohmann::json Engine::Impl::ptpJson() const
     // reads it as its own.
     ClockSample s;
     region->clock().read(s);
-    nlohmann::json j = { { "source", "gstreamer" }, { "domain", config.ptpDomain },
+#if defined(__linux__)
+    const char* source = "linuxptp";
+#else
+    const char* source = "gstreamer";
+#endif
+    nlohmann::json j = { { "source", source }, { "domain", config.ptpDomain },
                          { "expectedDomain", config.ptpDomain }, { "expectedProfile", "aes67" }, { "utcOffsetS", 37 },
                          { "locked", s.state == ClockState::Locked }, { "state", stateName(s.state) },
                          { "epoch", s.epoch } };
@@ -384,7 +389,9 @@ nlohmann::json Engine::Impl::ptpJson() const
     {
         const PtpStatus st = ptp->status();
         j["available"] = true;
-        j["reason"] = "";
+        j["reason"] = st.reason;
+        j["source"] = st.source;
+        j["detail"] = st.detail;
         j["gmPresent"] = st.gmPresent;
         j["gmIdentity"] = st.gmPresent ? pmcIdentity(st.gmIdentity) : "";
         j["portState"] = st.synced ? "SLAVE" : (st.gmPresent ? "UNCALIBRATED" : "LISTENING");
