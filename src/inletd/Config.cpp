@@ -79,13 +79,11 @@ bool Config::applySettings(const nlohmann::json& j, std::string& error)
 
 uint32_t Config::linkOffsetFrames() const
 {
-#if defined(_WIN32)
-    // 2 ms left too little margin for 1 ms packets and Windows scheduling in
-    // end-to-end tests; 3 ms ran clean.
+    // A 1 ms packet's last sample leaves a millisecond after its first, then
+    // the send offset and the network: 1 ms is always late, 2 ms left too
+    // little margin in end-to-end tests on Windows and on Linux, 3 ms ran
+    // clean on both.
     const uint32_t us = linkOffsetUs ? linkOffsetUs : 3000;
-#else
-    const uint32_t us = linkOffsetUs ? linkOffsetUs : 1000;
-#endif
     return (uint32_t) ((uint64_t) us * sampleRate / 1000000u);
 }
 
