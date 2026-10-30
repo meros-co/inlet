@@ -12,10 +12,14 @@
 // within a frame of it (those sent near the ramp's wraps, where converters
 // ring, are left out).
 //
-//   inlet-alsa-loopback [device] [seconds] [period] [rate]     (default: inlet 10 256 48000)
+//   inlet-alsa-loopback [device] [seconds] [period] [rate] [channels]     (default: inlet 10 256 48000 8)
+//
+// Through PipeWire ("pipewire"), use 2 channels: they land on Inlet's first two
+// (its sink and source call them FL and FR); other counts may be remixed.
 
 #include <alsa/asoundlib.h>
 
+#include <algorithm>
 #include <atomic>
 #include <climits>
 #include <cstdint>
@@ -29,7 +33,7 @@
 
 namespace
 {
-constexpr int kChannels = 8;
+int kChannels = 8;
 constexpr uint32_t kMask = 0x3FFFF;     // the ramp wraps at 2^18; plus one, it is never zero
 constexpr uint32_t kNearWrap = 2048;
 
@@ -67,6 +71,7 @@ int main(int argc, char** argv)
     const int seconds = argc > 2 ? std::atoi(argv[2]) : 10;
     const snd_pcm_uframes_t period = argc > 3 ? (snd_pcm_uframes_t) std::atol(argv[3]) : 256;
     const unsigned rate = argc > 4 ? (unsigned) std::atoi(argv[4]) : 48000;
+    kChannels = argc > 5 ? std::max(1, std::atoi(argv[5])) : 8;
 
     snd_pcm_t* play = open(device, SND_PCM_STREAM_PLAYBACK, rate, period);
     snd_pcm_t* rec = open(device, SND_PCM_STREAM_CAPTURE, rate, period);
