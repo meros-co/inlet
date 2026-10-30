@@ -16,11 +16,7 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-if(WIN32 OR APPLE)
-    option(INLET_BUILD_APP "Build the Inlet app (JUCE)" ON)
-else()
-    option(INLET_BUILD_APP "Build the Inlet app (JUCE)" OFF)
-endif()
+option(INLET_BUILD_APP "Build the Inlet app (JUCE)" ON)
 
 include(CTest)
 include(cmake/Dependencies.cmake)
@@ -64,4 +60,8 @@ add_subdirectory(tools)
 
 if(BUILD_TESTING)
     add_subdirectory(tests)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_subdirectory(packaging/linux)
 endif()

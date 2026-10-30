@@ -177,7 +177,11 @@ void StatusPage::update(const InletdClient::Snapshot& s)
     if (s.reachable)
     {
         cards[0]->value = str(st, "inputs") + " in" + dot + str(st, "outputs") + " out";
+#if JUCE_WINDOWS
         cards[0]->detail = kHz((double) st.getProperty("sampleRate", 48000)) + dot + u8("ASIO\xc2\xae driver");
+#else
+        cards[0]->detail = kHz((double) st.getProperty("sampleRate", 48000)) + dot + "PipeWire and ALSA";
+#endif
         cards[0]->detailState = State::Ok;
         const auto rx = st.getProperty("receivers", {}), tx = st.getProperty("senders", {});
         int active = 0, receiving = 0, enabled = 0, sending = 0;
@@ -214,7 +218,7 @@ void StatusPage::update(const InletdClient::Snapshot& s)
     startButton.setButtonText(serviceStatus == service::Status::Starting ? u8("Starting\xe2\x80\xa6")
                               : serviceStatus == service::Status::Stopping ? u8("Stopping\xe2\x80\xa6")
                                                                             : juce::String("Start Inlet"));
-    servicesButton.setVisible(!s.reachable && installed);
+    servicesButton.setVisible(!s.reachable && installed && service::hasServicesApp());
     resized();
     repaint();
 }
@@ -350,7 +354,11 @@ void StatusPage::paintOnline(juce::Graphics& g)
     {
         g.setColour(colour::n500);
         g.setFont(assets::font(type::table));
+#if JUCE_WINDOWS
         g.drawText(u8("None. Choose \xe2\x80\x9cInlet\xe2\x80\x9d as the ASIO device in your audio software."),
+#else
+        g.drawText(u8("None. Choose \xe2\x80\x9cInlet\xe2\x80\x9d as the device in your audio software."),
+#endif
                    r.removeFromTop(34), juce::Justification::centredLeft, true);
     }
     else
@@ -405,7 +413,11 @@ void StatusPage::paintOffline(juce::Graphics& g)
     switch (serviceStatus)
     {
     case service::Status::NotInstalled:
+#if JUCE_WINDOWS
         text = u8("The sound card runs as a background service, and it isn\xe2\x80\x99t installed. Run install.cmd from the Inlet package.");
+#else
+        text = u8("The sound card runs as a background service, and it isn\xe2\x80\x99t installed. Install the inlet package.");
+#endif
         break;
     case service::Status::Starting:
         text = "The sound card is starting. This window connects on its own.";
@@ -1071,13 +1083,22 @@ AboutPage::AboutPage(InletdClient& c) : Page(c, "About")
 {
     const void* bytes = nullptr;
     int size = 0;
+#if JUCE_WINDOWS
+    // The ASIO driver is Windows': its logo and credit are shown there only.
     if (assets::data("ASIO-compatible-logo-Steinberg-TM-BW.png", bytes, size))
         asioLogo = juce::ImageCache::getFromMemory(bytes, size);
+#else
+    juce::ignoreUnused(bytes, size);
+#endif
     source.setButtonText("Source code");
     source.setURL(juce::URL("https://github.com/meros-co/inlet"));
     licences.setButtonText("Licences");
     licences.onClick = [] {
+#if JUCE_LINUX
+        const juce::File f("/usr/share/doc/inlet/THIRD-PARTY.txt");
+#else
         const auto f = juce::File::getSpecialLocation(juce::File::currentExecutableFile).getSiblingFile("THIRD-PARTY.txt");
+#endif
         if (f.existsAsFile())
             f.startAsProcess();
         else
@@ -1143,12 +1164,18 @@ void AboutPage::paint(juce::Graphics& g)
     as.setLineSpacing(5.0f);
     as.append(u8("Copyright \xc2\xa9 2026 Meros Inc. Inlet is free software under the GNU Affero General Public License, version 3 only.\n\n"),
               assets::font(type::secondary), colour::n300);
+#if JUCE_WINDOWS
     as.append(u8("ASIO is a trademark and software of Steinberg Media Technologies GmbH. Inlet\xe2\x80\x99s ASIO\xc2\xae driver "
                  "is built with the ASIO SDK, used under the GNU General Public License, version 3.\n\n"),
               assets::font(type::secondary), colour::n300);
     as.append(u8("Also inside: GStreamer (LGPL) for PTP, libsamplerate (BSD), JUCE (AGPLv3), "
                  "the Inter typeface (SIL Open Font License 1.1) and Phosphor icons (MIT)."),
               assets::font(type::secondary), colour::n500);
+#else
+    as.append(u8("PTP is linuxptp\xe2\x80\x99s ptp4l, run as a program of its own (GPL). Also inside: libsamplerate (BSD), "
+                 "JUCE (AGPLv3), the Inter typeface (SIL Open Font License 1.1) and Phosphor icons (MIT)."),
+              assets::font(type::secondary), colour::n500);
+#endif
     as.setWordWrap(juce::AttributedString::byWord);
     as.draw(g, textRect.toFloat());
 

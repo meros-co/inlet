@@ -23,9 +23,11 @@ file(GLOB INLET_APP_ASSETS CONFIGURE_DEPENDS
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/*.ttf
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/icons/*.svg
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/tray/*.png)
-juce_add_binary_data(InletAppData SOURCES
-    ${INLET_APP_ASSETS}
-    ${PROJECT_SOURCE_DIR}/third_party/asiosdk/logo/ASIO-compatible-logo-Steinberg-TM-BW.png)
+# The ASIO logo goes with the ASIO driver: Windows only.
+if(WIN32)
+    list(APPEND INLET_APP_ASSETS ${PROJECT_SOURCE_DIR}/third_party/asiosdk/logo/ASIO-compatible-logo-Steinberg-TM-BW.png)
+endif()
+juce_add_binary_data(InletAppData SOURCES ${INLET_APP_ASSETS})
 
 target_compile_definitions(InletApp PRIVATE
     JUCE_WEB_BROWSER=0
@@ -43,3 +45,7 @@ target_link_libraries(InletApp PRIVATE
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    install(PROGRAMS $<TARGET_FILE:InletApp> DESTINATION bin RENAME inlet COMPONENT inlet)
+endif()

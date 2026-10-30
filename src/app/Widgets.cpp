@@ -503,6 +503,50 @@ void openServices()
 {
     ShellExecuteW(nullptr, L"open", L"services.msc", nullptr, nullptr, SW_SHOWNORMAL);
 }
+bool hasServicesApp() { return true; }
+#elif JUCE_LINUX
+// systemd: "inletd.service". Starting it is allowed to the person at the
+// computer by Inlet's polkit rule; where polkit has no rules (Ubuntu 22.04),
+// systemd asks for an administrator's password itself.
+Status query()
+{
+    juce::ChildProcess p;
+    if (!p.start(juce::StringArray { "systemctl", "show", "--property=LoadState,ActiveState", "--value", "inletd.service" }))
+        return Status::Unknown;
+    const auto lines = juce::StringArray::fromLines(p.readAllProcessOutput().trim());
+    if (lines.size() < 2)
+        return Status::Unknown;
+    if (lines[0] == "not-found")
+        return Status::NotInstalled;
+    const auto& active = lines[1];
+    return active == "active"         ? Status::Running
+         : active == "activating"     ? Status::Starting
+         : active == "deactivating"   ? Status::Stopping
+         : active == "inactive" || active == "failed" ? Status::Stopped
+                                      : Status::Unknown;
+}
+
+bool start(juce::String& error)
+{
+    // Not waited for: systemd may ask for a password first. The status shows
+    // when it runs.
+    static juce::ChildProcess p;
+    if (!p.start(juce::StringArray { "systemctl", "start", "--no-block", "inletd.service" }))
+    {
+        error = "systemctl could not be run.";
+        return false;
+    }
+    if (p.waitForProcessToFinish(300) && p.getExitCode() != 0)
+    {
+        error = "The service did not start: " + p.readAllProcessOutput().trim()
+              + ". See \"journalctl -u inletd\".";
+        return false;
+    }
+    return true;
+}
+
+void openServices() {}
+bool hasServicesApp() { return false; }
 #else
 Status query() { return Status::Unknown; }
 bool start(juce::String& error)
@@ -511,6 +555,7 @@ bool start(juce::String& error)
     return false;
 }
 void openServices() {}
+bool hasServicesApp() { return false; }
 #endif
 
 } // namespace service

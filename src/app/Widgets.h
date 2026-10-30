@@ -96,6 +96,8 @@ Status query();
 bool start(juce::String& error);
 /** Opens services.msc. */
 void openServices();
+/** There is a services app to open (Windows). */
+bool hasServicesApp();
 } // namespace service
 
 } // namespace inlet::app
