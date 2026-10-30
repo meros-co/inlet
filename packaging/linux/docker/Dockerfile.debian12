@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 Meros Inc.
+#
+# Builds and tests Inlet for Linux on Debian 12, and makes its .deb. Besides
+# the build tools it has what the tests run against: linuxptp, PipeWire and
+# ALSA's tools.
+#
+#   docker build -t inlet-build:debian12 -f packaging/linux/docker/Dockerfile.debian12 packaging/linux/docker
+
+FROM debian:12
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        build-essential cmake ninja-build pkg-config git ca-certificates file dpkg-dev rpm \
+        libasound2-dev libpipewire-0.3-dev libspa-0.2-dev \
+        libx11-dev libxext-dev libxrandr-dev libxinerama-dev libxcursor-dev libfreetype-dev libfontconfig1-dev \
+        linuxptp iproute2 pipewire pipewire-bin alsa-utils \
+    && rm -rf /var/lib/apt/lists/*
