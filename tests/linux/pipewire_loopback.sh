@@ -60,6 +60,17 @@ cat > "$XDG_CONFIG_HOME/wireplumber/bluetooth.lua.d/80-no-bluetooth.lua" <<'LUA'
 bluez_monitor.enabled = false
 function bluez_monitor.enable() end
 LUA
+# (WirePlumber 0.5 and later read this instead.)
+mkdir -p "$XDG_CONFIG_HOME/wireplumber/wireplumber.conf.d"
+cat > "$XDG_CONFIG_HOME/wireplumber/wireplumber.conf.d/80-no-bluetooth.conf" <<'CONF'
+wireplumber.profiles = {
+  main = {
+    monitor.bluez = disabled
+    monitor.bluez-midi = disabled
+    support.logind = disabled
+  }
+}
+CONF
 dbus-daemon --session --fork --address="unix:path=$XDG_RUNTIME_DIR/bus" --print-pid > "$work/dbus.pid"
 export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
 pids+=("$(cat "$work/dbus.pid")")

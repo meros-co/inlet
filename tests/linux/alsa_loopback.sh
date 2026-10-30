@@ -38,8 +38,7 @@ api() {
     exec 3<>/dev/tcp/127.0.0.1/8099 || return 1
     printf '%s %s HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: %s\r\nConnection: close\r\n\r\n%s' \
         "$1" "/inlet/v1$2" "${#3}" "$3" >&3
-    if [ "${4:-}" = show ]; then sed -n '/^
-$/,$p' <&3 | tail -n +2; else cat <&3 > /dev/null; fi
+    if [ "${4:-}" = show ]; then sed -n '/^\r$/,$p' <&3 | tail -n +2; else cat <&3 > /dev/null; fi
     exec 3>&-
 }
 for i in $(seq 1 50); do api GET /status "" 2>/dev/null && break; sleep 0.1; done
