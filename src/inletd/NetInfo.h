@@ -18,7 +18,7 @@ struct NetInterface
     bool wireless = false;
     bool loopback = false;
     bool gateway = false;      ///< has a default gateway: the network the computer actually uses
-    bool virtualSwitch = false;   ///< Hyper-V, WSL, Docker, VMware, VirtualBox: not a real network
+    bool virtualSwitch = false;   ///< Hyper-V, WSL, Docker, VMware, VirtualBox, a Linux bridge or veth: not a real network
 };
 
 std::vector<NetInterface> listInterfaces();

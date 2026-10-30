@@ -3,6 +3,7 @@
 
 #include "NetInfo.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -117,9 +118,40 @@ std::string osDescription()
 
 #else
 
+#if defined(__linux__)
+namespace
+{
+
+bool exists(const std::string& path) { return ::access(path.c_str(), F_OK) == 0; }
+
+/** The interfaces the default routes go out of, from /proc/net/route. */
+std::vector<std::string> gatewayInterfaces()
+{
+    std::vector<std::string> out;
+    if (FILE* f = std::fopen("/proc/net/route", "r"))
+    {
+        char line[256];
+        while (std::fgets(line, sizeof line, f) != nullptr)
+        {
+            char name[64] = {};
+            unsigned long destination = 1, flags = 0;
+            if (std::sscanf(line, "%63s %lx %*x %lx", name, &destination, &flags) == 3 && destination == 0 && (flags & 0x2))
+                out.push_back(name);   // destination 0.0.0.0, RTF_GATEWAY
+        }
+        std::fclose(f);
+    }
+    return out;
+}
+
+} // namespace
+#endif
+
 std::vector<NetInterface> listInterfaces()
 {
     std::vector<NetInterface> out;
+#if defined(__linux__)
+    const auto gateways = gatewayInterfaces();
+#endif
     ifaddrs* list = nullptr;
     if (getifaddrs(&list) != 0)
         return out;
@@ -135,6 +167,14 @@ std::vector<NetInterface> listInterfaces()
         n.ipv4 = ip;
         n.up = (a->ifa_flags & IFF_UP) && (a->ifa_flags & IFF_RUNNING);
         n.loopback = (a->ifa_flags & IFF_LOOPBACK) != 0;
+#if defined(__linux__)
+        // Wi-Fi has a wireless directory (or a radio); an interface with no
+        // device behind it is software: a bridge, veth, Docker, libvirt, a VPN.
+        const std::string sys = std::string("/sys/class/net/") + a->ifa_name;
+        n.wireless = exists(sys + "/wireless") || exists(sys + "/phy80211");
+        n.virtualSwitch = !n.loopback && !exists(sys + "/device");
+        n.gateway = std::find(gateways.begin(), gateways.end(), n.name) != gateways.end();
+#endif
         for (ifaddrs* l = list; l != nullptr; l = l->ifa_next)
         {
             if (l->ifa_addr == nullptr || std::strcmp(l->ifa_name, a->ifa_name) != 0)
@@ -205,7 +245,7 @@ bool chooseInterface(const std::string& configuredIp, NetInterface& out)
             if (!n.up || n.loopback)
                 continue;
             const bool real = !n.virtualSwitch && n.ipv4.rfind("169.254.", 0) != 0;
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__linux__)
             const bool gw = n.gateway;
 #else
             const bool gw = true;   // no gateway information here
