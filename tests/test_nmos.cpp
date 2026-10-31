@@ -120,8 +120,8 @@ NmosNode::Config config()
     c.nodeId = "11111111-2222-4333-8444-555555555555";
     c.deviceId = "66666666-7777-4888-9999-aaaaaaaaaaaa";
     c.advertise = false;
-    c.services = json::array({ { { "href", "http://127.0.0.1:8081/inlet/v1" }, { "type", "urn:x-meros:service:inlet/v1" } } });
-    c.tags = { { "urn:x-meros:product", json::array({ "inlet" }) } };
+    c.services = json::array({ { { "href", "http://127.0.0.1:8081/inlet/v1" }, { "type", "urn:x-manifold:service:inlet/v1" } } });
+    c.tags = { { "urn:x-manifold:product", json::array({ "inlet" }) } };
     return c;
 }
 
@@ -164,8 +164,8 @@ static void nodeApi()
     FakeModel model;
     NmosNode node(model, config());
     const auto self = get(node, "/x-nmos/node/v1.3/self");
-    CHECK(self["services"][0]["type"] == "urn:x-meros:service:inlet/v1");
-    CHECK(self["tags"]["urn:x-meros:product"][0] == "inlet");
+    CHECK(self["services"][0]["type"] == "urn:x-manifold:service:inlet/v1");
+    CHECK(self["tags"]["urn:x-manifold:product"][0] == "inlet");
     const auto rxs = get(node, "/x-nmos/node/v1.3/receivers");
     CHECK_EQ(rxs.size(), 2u);
     CHECK(rxs[0]["caps"]["media_types"].size() == 3);

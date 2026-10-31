@@ -29,7 +29,7 @@ namespace
 {
 
 constexpr const char* kVersion = "0.1.0";
-constexpr const char* kServiceType = "urn:x-meros:service:inlet/v1";
+constexpr const char* kServiceType = "urn:x-manifold:service:inlet/v1";
 
 int64_t wallNs()
 {
@@ -228,9 +228,9 @@ bool Engine::start(std::string& error)
     nc.receiveRates.assign(std::begin(StreamManager::kReceiveRates), std::end(StreamManager::kReceiveRates));
     nc.services = nlohmann::json::array({ { { "href", "http://" + d.iface.ipv4 + ":" + std::to_string(c.apiPort) + "/inlet/v1" },
                                             { "type", kServiceType } } });
-    nc.tags = { { "urn:x-meros:product", nlohmann::json::array({ "inlet" }) },
-                { "urn:x-meros:version", nlohmann::json::array({ kVersion }) },
-                { "urn:x-meros:os", nlohmann::json::array({ osDescription() }) } };
+    nc.tags = { { "urn:x-manifold:product", nlohmann::json::array({ "inlet" }) },
+                { "urn:x-manifold:version", nlohmann::json::array({ kVersion }) },
+                { "urn:x-manifold:os", nlohmann::json::array({ osDescription() }) } };
     // With NMOS off, nothing is advertised or registered and /x-nmos is not
     // served: a program that runs inletd presents its streams in its own node.
     if (c.nmos)
