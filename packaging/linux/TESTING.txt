@@ -1,0 +1,135 @@
+Inlet test build for Linux
+==========================
+
+What this is: an AES67 virtual sound card. Programs see a sound card called
+"Inlet AES67 virtual sound card", in PipeWire and as the ALSA device "inlet";
+its inputs are AES67 streams from the network and its outputs are sent to the
+network as AES67 streams. A console or any NMOS controller can find and route
+it.
+
+Needs: Ubuntu 22.04 or later, Debian 12 or later, Fedora (the current two
+releases), RHEL, Rocky or Alma Linux 9 or later, or Arch Linux, on x86-64 or
+64-bit ARM; systemd; a wired network interface on the AES67 network (Inlet
+warns on Wi-Fi, which carries the streams poorly); linuxptp (installed with
+Inlet). A PTP grandmaster on the network for clock lock; without one, Inlet
+runs on the computer's own clock and says so.
+
+Install
+-------
+- Debian, Ubuntu:        sudo apt install ./inlet_0.1.0_amd64.deb   (or _arm64)
+- Fedora, RHEL, Rocky,
+  Alma:                  sudo dnf install ./inlet-0.1.0-1.x86_64.rpm (or .aarch64)
+- Arch Linux:            in packaging/linux/arch, makepkg -si
+
+The service (inletd) starts at once and at every boot. Inlet in PipeWire
+starts with each user's PipeWire: sign out and in again (or run
+"systemctl --user start inlet-pipewire") after the first install. The Inlet
+app is in the applications menu and starts in the system tray at sign-in.
+Installing over an earlier build keeps the settings.
+
+Check
+-----
+- systemctl status inletd                  active (running)
+- systemctl --user status inlet-pipewire   active (running), on PipeWire systems
+- Inlet app, Status page: the network interface should be your wired AES67
+  interface. If not, choose it on the Settings page and press Apply.
+- Status page, Clock: "Locked to the grandmaster" when your network has one.
+- PipeWire: "Inlet AES67 virtual sound card" is listed as an output and an
+  input (pavucontrol, the desktop's sound settings, or "wpctl status"); choose
+  it there as the output and input. Programs on PipeWire then run on Inlet's
+  clock: Inlet drives the graph.
+- ALSA (programs that use ALSA directly, and machines without PipeWire): the
+  device "inlet", for example "aplay -D inlet file.wav" or
+  "arecord -D inlet -c 2 -f S32_LE -r 48000 take.wav". "aplay -L" lists it.
+  A second device starting at channel 9 is one line in an ALSA configuration
+  file:   pcm.inlet2 { type inlet first 8 }
+- The Status page lists the programs using Inlet.
+
+Receive (network -> programs)
+-----------------------------
+- From a console or an NMOS controller: route a sender to an Inlet receiver
+  ("Net In 1" ...). Net In k's channels are Inlet's inputs (k-1)*8+1 ... k*8
+  by default.
+- Or in the Inlet app, Receivers page: pick a stream (heard by SAP or NMOS, or
+  pasted with "Add an SDP..."), select a receiver, "Play on this receiver".
+
+Send (programs -> network)
+--------------------------
+- Inlet's outputs 1-8 go out as "Net Out 1", 9-16 as "Net Out 2", and so on,
+  announced by SAP and NMOS. Route them from a console or an NMOS controller.
+- Everything PipeWire plays to Inlet is one program to Inlet; programs on the
+  ALSA device are each their own. Up to eight play out at once, mixed.
+
+Sample rates
+------------
+- Programs may run at 44.1, 48, 88.2, 96, 176.4 or 192 kHz, whatever the
+  network's rate: Inlet converts, adding a little latency (a few milliseconds
+  at most), which it reports. At the network's rate nothing is converted. The
+  Status page shows a program's own rate next to it when Inlet converts.
+
+Clock (PTP)
+-----------
+- Inlet follows the network's PTP grandmaster with linuxptp. When ptp4l
+  already runs on the computer (as /var/run/ptp4l answers) on Inlet's PTP
+  domain, Inlet uses it; otherwise it runs its own ptp4l, with hardware
+  timestamps where the interface has them, configured by
+  /etc/inlet/ptp4l.conf.
+- inlet-ptp-probe --interface <name> [--domain N] [--seconds S] shows the
+  clock Inlet would follow, without Inlet.
+
+Start, Stop and quitting
+------------------------
+- Status page, "Stop Inlet", or the tray menu's "Stop Inlet": the service
+  quits. Inlet's senders leave the network (SAP deletions, NMOS
+  deregistration and an mDNS goodbye) and its receivers stop. Programs using
+  Inlet keep running and hear silence. If a program is using Inlet, the app
+  asks first.
+- Status page, "Start Inlet", or the tray menu's "Start Inlet": the service
+  starts and the app reconnects within a few seconds. Programs that kept
+  Inlet open carry on by themselves; nothing needs reopening.
+- Signed-in users at the computer may start and stop Inlet without a
+  password. (On Ubuntu 22.04, whose polkit predates such rules, the system
+  asks for an administrator's password.)
+- "sudo systemctl stop inletd" and "sudo systemctl start inletd" do the same.
+- Tray menu, "Quit the Inlet app": the window and tray icon go; the sound card
+  keeps running. "Quit Inlet completely" also stops the service, until the app
+  starts it, the next sign-in, or the next boot.
+- The tray icon needs a system tray: on GNOME, the AppIndicator extension.
+  Without one there is no icon; open Inlet from the applications menu.
+
+Loopback self-test (no other device needed)
+-------------------------------------------
+1. Close programs that play through Inlet (their outputs would be mixed into
+   the test's).
+2. Inlet app, Receivers page: select "Net In 1", choose the stream "Net Out 1",
+   "Play on this receiver".
+3. Through the ALSA device:
+     inlet-alsa-loopback inlet 15 256
+   It should end with "PASS: the samples came back at one offset". The same
+   with the rate converted, for example:  inlet-alsa-loopback inlet 15 256 44100
+4. Through PipeWire (2 channels, Inlet's first two):
+     inlet-alsa-loopback pipewire 15 256 48000 2
+   with Inlet as PipeWire's default output and input.
+
+Where things are
+----------------
+- Programs:  /usr/bin/inletd, /usr/bin/inlet-pipewire, /usr/bin/inlet (the app)
+- ALSA:      the plugin in alsa-lib's plugin folder; /etc/alsa/conf.d/50-inlet.conf
+- Settings:  /var/lib/inlet/inletd.json   (kept on removal; removed by
+             "apt purge inlet")
+- Log:       journalctl -u inletd, and journalctl --user -u inlet-pipewire
+- Services:  inletd.service; the user service inlet-pipewire.service
+- PTP:       /etc/inlet/ptp4l.conf; Inlet's own ptp4l answers on /run/inlet/ptp4l
+- API:       http://127.0.0.1:8091/inlet/v1/status (and NMOS at /x-nmos/)
+- Licenses:  /usr/share/doc/inlet
+
+Uninstall
+---------
+- Debian, Ubuntu:  sudo apt remove inlet      (or purge, to remove settings)
+- Fedora, RHEL:    sudo dnf remove inlet
+- Arch Linux:      sudo pacman -R inlet
+
+Known limits of this build
+--------------------------
+- Up to eight programs play out at once (PipeWire counts as one); a ninth
+  plays Inlet's inputs only.
