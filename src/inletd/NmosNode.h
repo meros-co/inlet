@@ -19,8 +19,8 @@
  *
  * Inlet's specifics:
  *  - its IS-04 node carries the first-party service
- *    `urn:x-manifold:service:inlet/v1` (the vault spec "Manifold <-> Inlet"),
- *    whose href is the Inlet local API, and product tags;
+ *    `urn:x-meros:service:inlet/v1`, whose href is the Inlet local API, and
+ *    product tags;
  *  - IS-08 inputs are the receivers; its one output is the device's inputs
  *    (what a DAW records), so a controller can say "Net In 3, channels 1-8,
  *    land on inputs 17-24".
