@@ -4,6 +4,8 @@
 # Inlet: an AES67 virtual sound card for Windows and macOS.
 
 cmake_minimum_required(VERSION 3.24)
+# macOS 13 or later; before project(), which reads it.
+set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "Oldest macOS Inlet runs on")
 project(Inlet VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 11)
@@ -52,6 +54,9 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_subdirectory(src/alsa)
     add_subdirectory(src/pipewire)
+endif()
+if(APPLE)
+    add_subdirectory(src/coreaudio)
 endif()
 if(INLET_BUILD_APP)
     add_subdirectory(src/app)

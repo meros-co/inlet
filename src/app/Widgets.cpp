@@ -10,12 +10,30 @@
 #if JUCE_WINDOWS
 #  include <windows.h>
 #  include <shellapi.h>
+#elif JUCE_MAC
+#  include <cerrno>
+#  include <cstring>
+#  include <fcntl.h>
+#  include <sys/file.h>
+#  include <sys/socket.h>
+#  include <sys/un.h>
+#  include <unistd.h>
 #endif
 
 namespace inlet::app
 {
 
 using namespace theme;
+
+juce::Array<juce::var> programsIn(const juce::var& status)
+{
+    juce::Array<juce::var> out;
+    const auto clients = status.getProperty("clients", {});
+    for (int i = 0; clients.isArray() && i < clients.size(); ++i)
+        if (clients[i].getProperty("kind", "").toString() != "coreaudio" || (bool) clients[i].getProperty("running", false))
+            out.add(clients[i]);
+    return out;
+}
 
 juce::String kHz(double rate)
 {
@@ -440,7 +458,7 @@ void Sidebar::paint(juce::Graphics& g)
     g.drawFittedText(clockDetail, c, juce::Justification::topLeft, 2);
 }
 
-/* ---- the Windows service ----------------------------------------------------------------------- */
+/* ---- the service ----------------------------------------------------------------------------------- */
 
 namespace service
 {
@@ -504,6 +522,7 @@ void openServices()
     ShellExecuteW(nullptr, L"open", L"services.msc", nullptr, nullptr, SW_SHOWNORMAL);
 }
 bool hasServicesApp() { return true; }
+juce::String openServicesLabel() { return "Open Services"; }
 #elif JUCE_LINUX
 // systemd: "inletd.service". Starting it is allowed to the person at the
 // computer by Inlet's polkit rule; where polkit has no rules (Ubuntu 22.04),
@@ -547,15 +566,67 @@ bool start(juce::String& error)
 
 void openServices() {}
 bool hasServicesApp() { return false; }
+juce::String openServicesLabel() { return "Open Services"; }
+#elif JUCE_MAC
+// What the installer puts in place (packaging/macos).
+const char* const kDaemonPlist = "/Library/LaunchDaemons/co.meros.inletd.plist";
+const char* const kStartSocket = "/var/run/co.meros.inletd.sock";
+const char* const kLog = "/Library/Logs/Inlet/inletd.log";
+// The lock a running inletd holds (inlet::shm::Directory).
+const char* const kRunningLock = "/tmp/Inlet.Directory.lock";
+
+Status query()
+{
+    if (!juce::File(kDaemonPlist).existsAsFile())
+        return Status::NotInstalled;
+    const int fd = ::open(kRunningLock, O_RDONLY);
+    if (fd < 0)
+        return Status::Stopped;
+    const bool held = flock(fd, LOCK_SH | LOCK_NB) != 0;
+    close(fd);
+    return held ? Status::Running : Status::Stopped;
+}
+
+bool start(juce::String& error)
+{
+    if (!juce::File(kDaemonPlist).existsAsFile())
+    {
+        error = u8("Inlet\xe2\x80\x99s service is not installed. Install Inlet again from its installer package.");
+        return false;
+    }
+    // launchd listens on this socket for inletd: a connection starts it.
+    const int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    sockaddr_un a {};
+    a.sun_family = AF_UNIX;
+    std::strncpy(a.sun_path, kStartSocket, sizeof a.sun_path - 1);
+    const bool ok = fd >= 0 && connect(fd, reinterpret_cast<sockaddr*>(&a), sizeof a) == 0;
+    const juce::String why(std::strerror(errno));
+    if (fd >= 0)
+        close(fd);
+    if (!ok)
+        error = "The service did not start (" + why + "). Its log is " + juce::String(kLog) + ".";
+    return ok;
+}
+
+void openServices()
+{
+    juce::ChildProcess open;
+    open.start(juce::StringArray { "/usr/bin/open", "-a", "Console", kLog }, 0);
+    open.waitForProcessToFinish(5000);
+}
+
+juce::String openServicesLabel() { return "Open Log"; }
+bool hasServicesApp() { return true; }
 #else
 Status query() { return Status::Unknown; }
 bool start(juce::String& error)
 {
-    error = "Start inletd with launchctl.";
+    error = "Start inletd yourself.";
     return false;
 }
 void openServices() {}
 bool hasServicesApp() { return false; }
+juce::String openServicesLabel() { return "Open Services"; }
 #endif
 
 } // namespace service

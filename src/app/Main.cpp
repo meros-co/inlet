@@ -3,8 +3,9 @@
 //
 // Inlet: the app for inletd, the service that runs the AES67 virtual sound
 // card. A window (status, receivers, senders, settings, about) and a tray icon
-// that stays when the window closes. One instance: starting it again (as the
-// ASIO driver's control panel does) brings the window up.
+// that stays when the window closes (in the menu bar on macOS). One instance:
+// starting it again (as the ASIO driver's control panel, or Audio MIDI Setup's
+// Configure button, does) brings the window up.
 //
 //   Inlet.exe [--tray]      --tray: start hidden (at sign-in), and start the
 //                           service if it is stopped
@@ -32,10 +33,13 @@ namespace
 {
 
 /** True when the taskbar is light (Windows' "system" theme), so the tray icon
-    uses its dark-on-light drawing. */
+    uses its dark-on-light drawing. (macOS draws the menu-bar icon from its
+    shape alone, in the menu bar's colour.) */
 bool lightTaskbar()
 {
-#if JUCE_WINDOWS
+#if JUCE_MAC
+    return !juce::Desktop::getInstance().isDarkModeActive();
+#elif JUCE_WINDOWS
     return juce::WindowsRegistry::getValue(
                "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize\\SystemUsesLightTheme", "0")
                .getIntValue()
@@ -49,9 +53,8 @@ bool lightTaskbar()
 juce::StringArray programsUsingInlet(const InletdClient::Snapshot& s)
 {
     juce::StringArray names;
-    const auto clients = s.status.getProperty("clients", {});
-    for (int i = 0; clients.isArray() && i < clients.size(); ++i)
-        names.addIfNotAlreadyThere(clients[i].getProperty("app", "").toString());
+    for (const auto& c : programsIn(s.status))
+        names.addIfNotAlreadyThere(c.getProperty("app", "").toString());
     names.removeEmptyStrings();
     return names;
 }
@@ -198,12 +201,24 @@ public:
 
     void mouseDown(const juce::MouseEvent& e) override
     {
+#if JUCE_MAC
+        // A menu-bar item: its menu on any click.
+        juce::ignoreUnused(e);
+        showDropdownMenu(menu());
+#else
         if (!e.mods.isPopupMenu())
         {
             if (onOpen)
                 onOpen();
             return;
         }
+        menu().showMenuAsync(juce::PopupMenu::Options().withMinimumWidth(300));
+#endif
+    }
+
+private:
+    juce::PopupMenu menu()
+    {
         juce::PopupMenu m;
         m.addItem("Open Inlet", [this] { if (onOpen) onOpen(); });
         if (running)
@@ -213,10 +228,9 @@ public:
         m.addSeparator();
         m.addItem("Quit the Inlet app\nThe sound card keeps running", [this] { if (onQuitApp) onQuitApp(); });
         m.addItem("Quit Inlet completely\nStops the sound card until you start it again", [this] { if (onQuitAll) onQuitAll(); });
-        m.showMenuAsync(juce::PopupMenu::Options().withMinimumWidth(300));
+        return m;
     }
 
-private:
     juce::String shownState;
     bool shownLight = false;
 };
@@ -277,7 +291,7 @@ public:
         if (commandLine.contains("--tray"))
         {
             // At sign-in: bring the sound card back if it was stopped (the
-            // service is set to start with Windows; this covers a stop since).
+            // service starts with the computer; this covers a stop since).
             if (service::query() == service::Status::Stopped)
             {
                 juce::String ignored;

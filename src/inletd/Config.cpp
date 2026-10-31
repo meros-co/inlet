@@ -88,7 +88,8 @@ uint32_t Config::linkOffsetFrames() const
     // A 1 ms packet's last sample leaves a millisecond after its first, then
     // the send offset and the network: 1 ms is always late, 2 ms left too
     // little margin in end-to-end tests on Windows and on Linux, 3 ms ran
-    // clean on both.
+    // clean on both. The same on macOS (1 ms dropped audio every few hundred
+    // milliseconds; 3 ms, with real-time network threads, ran clean).
     const uint32_t us = linkOffsetUs ? linkOffsetUs : 3000;
     return (uint32_t) ((uint64_t) us * sampleRate / 1000000u);
 }

@@ -1,0 +1,15 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 Meros Inc.
+#
+# Before installing over an earlier Inlet: what runs from it stops.
+
+launchctl bootout system/co.meros.inletd 2>/dev/null
+user=$(stat -f %u /dev/console)
+if [ "$user" != "0" ]; then
+    launchctl bootout "gui/$user/co.meros.inlet" 2>/dev/null
+fi
+pkill -x Inlet 2>/dev/null
+pkill -x inletd 2>/dev/null
+pkill -x gst-ptp-helper 2>/dev/null
+exit 0

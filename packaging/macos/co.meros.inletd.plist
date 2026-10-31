@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  inletd, Inlet's per-machine process, as a launchd daemon (root: PTP's ports
+  and its helper's priority need it). It starts with the computer and comes
+  back if it fails; when the Inlet app stops it (a clean exit), it stays
+  stopped until something connects to its socket, which is how the app's
+  Start Inlet starts it again without administrator rights.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>co.meros.inletd</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Library/Application Support/Inlet/bin/inletd</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>ThrottleInterval</key>
+	<integer>5</integer>
+	<key>Sockets</key>
+	<dict>
+		<key>Start</key>
+		<dict>
+			<key>SockPathName</key>
+			<string>/var/run/co.meros.inletd.sock</string>
+			<key>SockPathMode</key>
+			<integer>438</integer>
+		</dict>
+	</dict>
+	<key>ProcessType</key>
+	<string>Interactive</string>
+	<key>StandardErrorPath</key>
+	<string>/Library/Logs/Inlet/inletd.log</string>
+	<key>StandardOutPath</key>
+	<string>/Library/Logs/Inlet/inletd.log</string>
+</dict>
+</plist>

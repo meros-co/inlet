@@ -39,6 +39,18 @@ const juce::String dash = u8("\xe2\x80\x94");
 const juce::String dot = u8(" \xc2\xb7 ");
 const juce::String enDash = u8("\xe2\x80\x93");
 
+// What the sound card is to other programs on this platform.
+#if JUCE_WINDOWS
+const juce::String driverName = u8("ASIO\xc2\xae driver");
+const juce::String chooseHint = u8("None. Choose \xe2\x80\x9cInlet\xe2\x80\x9d as the ASIO device in your audio software.");
+#elif JUCE_MAC
+const juce::String driverName = "Core Audio driver";
+const juce::String chooseHint = u8("None. Choose \xe2\x80\x9cInlet\xe2\x80\x9d as the device in Sound settings or your audio software.");
+#else
+const juce::String driverName = "PipeWire and ALSA";
+const juce::String chooseHint = u8("None. Choose \xe2\x80\x9cInlet\xe2\x80\x9d as the device in your audio software.");
+#endif
+
 void cellText(juce::Graphics& g, const juce::String& text, int w, int h, juce::Colour c, bool right = false,
               const juce::Font* font = nullptr)
 {
@@ -141,6 +153,7 @@ StatusPage::StatusPage(InletdClient& c) : Page(c, "Status")
     InletLookAndFeel::setVariant(stopButton, "secondary", "stop");
     InletLookAndFeel::setVariant(startButton, "primary", "play");
     InletLookAndFeel::setVariant(servicesButton, "ghost", "arrow-square-out");
+    servicesButton.setButtonText(service::openServicesLabel());
     stopButton.onClick = [this] { if (onStop) onStop(); };
     startButton.onClick = [this] { if (onStart) onStart(); };
     servicesButton.onClick = [] { service::openServices(); };
@@ -177,11 +190,7 @@ void StatusPage::update(const InletdClient::Snapshot& s)
     if (s.reachable)
     {
         cards[0]->value = str(st, "inputs") + " in" + dot + str(st, "outputs") + " out";
-#if JUCE_WINDOWS
-        cards[0]->detail = kHz((double) st.getProperty("sampleRate", 48000)) + dot + u8("ASIO\xc2\xae driver");
-#else
-        cards[0]->detail = kHz((double) st.getProperty("sampleRate", 48000)) + dot + "PipeWire and ALSA";
-#endif
+        cards[0]->detail = kHz((double) st.getProperty("sampleRate", 48000)) + dot + driverName;
         cards[0]->detailState = State::Ok;
         const auto rx = st.getProperty("receivers", {}), tx = st.getProperty("senders", {});
         int active = 0, receiving = 0, enabled = 0, sending = 0;
@@ -349,17 +358,12 @@ void StatusPage::paintOnline(juce::Graphics& g)
     auto r = programsRect;
     drawKicker(g, r.removeFromTop(16), "Programs using Inlet", colour::n500, type::kicker, 0.1f);
     r.removeFromTop(6);
-    const auto clients = st.getProperty("clients", {});
-    if (!clients.isArray() || clients.size() == 0)
+    const auto clients = programsIn(st);
+    if (clients.isEmpty())
     {
         g.setColour(colour::n500);
         g.setFont(assets::font(type::table));
-#if JUCE_WINDOWS
-        g.drawText(u8("None. Choose \xe2\x80\x9cInlet\xe2\x80\x9d as the ASIO device in your audio software."),
-#else
-        g.drawText(u8("None. Choose \xe2\x80\x9cInlet\xe2\x80\x9d as the device in your audio software."),
-#endif
-                   r.removeFromTop(34), juce::Justification::centredLeft, true);
+        g.drawText(chooseHint, r.removeFromTop(34), juce::Justification::centredLeft, true);
     }
     else
         for (int i = 0; i < clients.size() && r.getHeight() >= 34; ++i)
@@ -415,6 +419,8 @@ void StatusPage::paintOffline(juce::Graphics& g)
     case service::Status::NotInstalled:
 #if JUCE_WINDOWS
         text = u8("The sound card runs as a background service, and it isn\xe2\x80\x99t installed. Run install.cmd from the Inlet package.");
+#elif JUCE_MAC
+        text = u8("The sound card runs as a background service, and it isn\xe2\x80\x99t installed. Install Inlet from its installer package.");
 #else
         text = u8("The sound card runs as a background service, and it isn\xe2\x80\x99t installed. Install the inlet package.");
 #endif
@@ -1081,14 +1087,12 @@ void SettingsPage::paint(juce::Graphics& g)
 
 AboutPage::AboutPage(InletdClient& c) : Page(c, "About")
 {
-    const void* bytes = nullptr;
-    int size = 0;
 #if JUCE_WINDOWS
     // The ASIO driver is Windows': its logo and credit are shown there only.
+    const void* bytes = nullptr;
+    int size = 0;
     if (assets::data("ASIO-compatible-logo-Steinberg-TM-BW.png", bytes, size))
         asioLogo = juce::ImageCache::getFromMemory(bytes, size);
-#else
-    juce::ignoreUnused(bytes, size);
 #endif
     source.setButtonText("Source code");
     source.setURL(juce::URL("https://github.com/meros-co/inlet"));
@@ -1117,8 +1121,11 @@ void AboutPage::resized()
     auto r = getLocalBounds().reduced(metric::pagePadX, 0).withTrimmedTop(metric::pagePadTop).withTrimmedBottom(metric::pagePadBottom);
     hero = r.removeFromTop(124);
     r.removeFromTop(24);
-    logoTile = r.removeFromRight(120).removeFromTop(150);
-    r.removeFromRight(28);
+    if (asioLogo.isValid())
+    {
+        logoTile = r.removeFromRight(120).removeFromTop(150);
+        r.removeFromRight(28);
+    }
     textRect = r.removeFromTop(juce::jmin(r.getHeight() - 40, 200));
     r.removeFromTop(8);
     auto links = r.removeFromTop(24);
@@ -1159,7 +1166,7 @@ void AboutPage::paint(juce::Graphics& g)
 
     }
 
-    // The licences, and the ASIO trademark.
+    // The licences, and on Windows the ASIO trademark.
     juce::AttributedString as;
     as.setLineSpacing(5.0f);
     as.append(u8("Copyright \xc2\xa9 2026 Meros Inc. Inlet is free software under the GNU Affero General Public License, version 3 only.\n\n"),
@@ -1168,6 +1175,8 @@ void AboutPage::paint(juce::Graphics& g)
     as.append(u8("ASIO is a trademark and software of Steinberg Media Technologies GmbH. Inlet\xe2\x80\x99s ASIO\xc2\xae driver "
                  "is built with the ASIO SDK, used under the GNU General Public License, version 3.\n\n"),
               assets::font(type::secondary), colour::n300);
+#endif
+#if !JUCE_LINUX
     as.append(u8("Also inside: GStreamer (LGPL) for PTP, libsamplerate (BSD), JUCE (AGPLv3), "
                  "the Inter typeface (SIL Open Font License 1.1) and Phosphor icons (MIT)."),
               assets::font(type::secondary), colour::n500);

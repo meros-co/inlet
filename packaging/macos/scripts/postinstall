@@ -1,0 +1,34 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 Meros Inc.
+#
+# After the files are in place:
+#   - Core Audio restarts, so every application sees the "Inlet" device;
+#   - inletd starts as a launchd daemon (and with every boot);
+#   - the firewall, if on, lets inletd and the PTP helper receive;
+#   - the Inlet app opens, and is in the menu bar at every sign-in.
+
+bin="/Library/Application Support/Inlet/bin"
+mkdir -p /Library/Logs/Inlet
+chown root:wheel /Library/LaunchDaemons/co.meros.inletd.plist /Library/LaunchAgents/co.meros.inlet.plist
+chmod 644 /Library/LaunchDaemons/co.meros.inletd.plist /Library/LaunchAgents/co.meros.inlet.plist
+
+# Core Audio loads drivers when it starts.
+killall coreaudiod 2>/dev/null
+
+fw=/usr/libexec/ApplicationFirewall/socketfilterfw
+if [ -x "$fw" ]; then
+    for p in "$bin/inletd" "$bin/gst-ptp-helper"; do
+        "$fw" --add "$p" >/dev/null 2>&1
+        "$fw" --unblockapp "$p" >/dev/null 2>&1
+    done
+fi
+
+launchctl bootstrap system /Library/LaunchDaemons/co.meros.inletd.plist
+
+user=$(stat -f %u /dev/console)
+if [ "$user" != "0" ]; then
+    launchctl bootstrap "gui/$user" /Library/LaunchAgents/co.meros.inlet.plist 2>/dev/null
+    launchctl asuser "$user" /usr/bin/open /Applications/Inlet.app
+fi
+exit 0

@@ -1,0 +1,20 @@
+Inlet includes or links the following third-party software.
+
+GStreamer 1.24+ (gstreamer, gstbase, gstnet, gst-ptp-helper) and GLib (glib, gobject,
+gio, gmodule), with libintl and PCRE2
+  GNU Lesser General Public License, version 2.1 or later (GStreamer, GLib, libintl);
+  BSD (PCRE2).
+  Shipped as unmodified dynamic libraries in /Library/Application Support/Inlet/bin/lib
+  (only their install names are changed, so inletd finds them there).
+  Source: https://gstreamer.freedesktop.org/src/ and https://download.gnome.org/sources/glib/
+  On request, Meros Inc. will provide the corresponding source for three years.
+
+libsamplerate 0.2.2 - BSD 2-Clause.
+nlohmann/json 3.11.3 - MIT.
+cpp-httplib 0.18.7 - MIT.
+JUCE 8 - used under the GNU Affero General Public License, version 3.
+meros-co/aes67 (libaes67, libmdns) - AGPL-3.0-only, Meros Inc.
+Inter (typeface, compiled into Inlet.app) - SIL Open Font License 1.1, Rasmus Andersson
+  and the Inter Project Authors; the licence is licences/Inter-OFL.txt.
+Phosphor Icons (12 icons, compiled into Inlet.app) - MIT, Phosphor Icons; the licence is
+  licences/Phosphor-LICENSE.txt.

@@ -33,7 +33,9 @@
 #  include <time.h>
 #  include <unistd.h>
 #  if defined(__APPLE__)
+#    include <mach/mach.h>
 #    include <mach/mach_time.h>
+#    include <mach/thread_policy.h>
 #    include <pthread.h>
 #    include <sys/qos.h>
 #  endif
@@ -283,7 +285,23 @@ void NetTx::Impl::run()
     if (mmcss == nullptr)
         SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 #elif defined(__APPLE__)
-    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+    // Real-time, as Core Audio's own IO threads are: a thread that is only
+    // "user interactive" wakes whenever macOS gets round to it, several
+    // milliseconds late at times, and its packets with it. Each wake-up is
+    // asked for within 1 ms, to do at most 250 us of work in the next 500 us.
+    {
+        static const mach_timebase_info_data_t tb = [] {
+            mach_timebase_info_data_t i;
+            mach_timebase_info(&i);
+            return i;
+        }();
+        const auto ticks = [](uint64_t ns) { return (uint32_t) ((__uint128_t) ns * tb.denom / tb.numer); };
+        thread_time_constraint_policy_data_t p { ticks(1'000'000), ticks(250'000), ticks(500'000), 1 };
+        if (thread_policy_set(pthread_mach_thread_np(pthread_self()), THREAD_TIME_CONSTRAINT_POLICY, (thread_policy_t) &p,
+                              THREAD_TIME_CONSTRAINT_POLICY_COUNT)
+            != KERN_SUCCESS)
+            pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+    }
 #endif
     while (running.load(std::memory_order_relaxed))
     {

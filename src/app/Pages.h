@@ -144,7 +144,7 @@ private:
     bool editing = false;
 };
 
-/** The app, its licences, the ASIO trademark. */
+/** The app, its licences, and on Windows the ASIO trademark. */
 class AboutPage : public Page
 {
 public:

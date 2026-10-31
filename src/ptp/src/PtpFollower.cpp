@@ -17,6 +17,11 @@
 #  endif
 #  include <windows.h>
 #  define G_OS_HELPER_SUFFIX ".exe"
+#elif defined(__APPLE__)
+#  include <climits>
+#  include <cstdlib>
+#  include <mach-o/dyld.h>
+#  define G_OS_HELPER_SUFFIX ""
 #else
 #  define G_OS_HELPER_SUFFIX ""
 #endif
@@ -154,12 +159,19 @@ std::unique_ptr<PtpFollower> PtpFollower::open(int domain, const std::vector<std
         // executable rather than in a GStreamer installation.
         if (g_getenv("GST_PTP_HELPER_1_0") == nullptr)
         {
-            gchar* self = g_file_read_link("/proc/self/exe", nullptr);   // Linux; null elsewhere
+            gchar* self = g_file_read_link("/proc/self/exe", nullptr);   // Linux; null elsewhere, so Windows and macOS ask the OS
 #if defined(_WIN32)
             wchar_t path[MAX_PATH] = {};
             GetModuleFileNameW(nullptr, path, MAX_PATH);
             g_free(self);
             self = g_utf16_to_utf8(reinterpret_cast<const gunichar2*>(path), -1, nullptr, nullptr, nullptr);
+#elif defined(__APPLE__)
+            char path[PATH_MAX] = {}, real[PATH_MAX] = {};
+            uint32_t size = sizeof path;
+            g_free(self);
+            self = nullptr;
+            if (_NSGetExecutablePath(path, &size) == 0 && realpath(path, real) != nullptr)
+                self = g_strdup(real);
 #endif
             if (self != nullptr)
             {
@@ -172,6 +184,12 @@ std::unique_ptr<PtpFollower> PtpFollower::open(int domain, const std::vector<std
                 g_free(self);
             }
         }
+#if defined(__APPLE__)
+        // inletd uses no GStreamer plugins. Installed, it carries its own
+        // GStreamer libraries: plugins from a GStreamer installed beside
+        // (Homebrew's) would load against the wrong ones.
+        g_setenv("GST_PLUGIN_SYSTEM_PATH_1_0", "", FALSE);
+#endif
         gst_init(nullptr, nullptr);
     }
 

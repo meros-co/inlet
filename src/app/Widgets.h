@@ -17,6 +17,11 @@ inline juce::String u8(const char* s) { return juce::String(juce::CharPointer_UT
 /** "48 kHz", "44.1 kHz". */
 juce::String kHz(double rate);
 
+/** The programs using Inlet, from a status's `clients`: an ASIO host once it
+    has loaded the driver; the Core Audio plug-in, which is attached all the
+    time, only while something plays through it. */
+juce::Array<juce::var> programsIn(const juce::var& status);
+
 enum class State { Ok, Warn, Bad, Idle };
 
 juce::Colour stateColour(State s);
@@ -86,18 +91,21 @@ private:
     juce::Rectangle<int> clockCard;
 };
 
-/** The Windows service ("inletd") as the Service Control Manager sees it. */
+/** inletd as the system runs it: the Windows service as the Service Control
+    Manager sees it, the macOS launchd daemon co.meros.inletd. */
 namespace service
 {
 enum class Status { Running, Stopped, Starting, Stopping, NotInstalled, Unknown };
 Status query();
-/** Asks the SCM to start the service. False with the reason (no permission:
-    an Inlet installed before the app could start it). */
+/** Starts it. False with the reason (Windows: no permission, an Inlet
+    installed before the app could start it). */
 bool start(juce::String& error);
-/** Opens services.msc. */
+/** Where to look when it will not start: services.msc, or its log on macOS. */
 void openServices();
 /** There is a services app to open (Windows). */
 bool hasServicesApp();
+/** That button's name. */
+juce::String openServicesLabel();
 } // namespace service
 
 } // namespace inlet::app

@@ -32,6 +32,10 @@ cmake --build build
 ctest --test-dir build
 ```
 
+On macOS, inletd needs GStreamer 1.24 or later (`brew install gstreamer`), and
+`packaging/macos/build-package.sh` makes the installer package (the app, the Core Audio
+driver, inletd as a launchd daemon); see `packaging/macos/TESTING.txt`.
+
 ## Licence
 
 Inlet is licensed under the GNU Affero General Public License, version 3 only
