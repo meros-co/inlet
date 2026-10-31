@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 Meros Inc.
+#
+# Cross-compiles Inlet for 64-bit ARM Linux on Debian 12 (x86-64) and makes its
+# arm64 .deb, with cmake/aarch64-linux-gnu.cmake; cpack runs with
+# DEB_HOST_ARCH=arm64 so the dependencies are found among the arm64 libraries.
+# (JUCE builds its own tool natively, hence this machine's compiler, FreeType and Fontconfig.)
+#
+#   docker build -t inlet-build:debian12-arm64 -f packaging/linux/docker/Dockerfile.debian12-arm64 packaging/linux/docker
+
+FROM debian:12
+
+RUN dpkg --add-architecture arm64 && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        build-essential libfreetype-dev libfontconfig1-dev crossbuild-essential-arm64 cmake ninja-build pkg-config git ca-certificates file dpkg-dev \
+        libasound2-dev:arm64 libpipewire-0.3-dev:arm64 libspa-0.2-dev:arm64 \
+        libx11-dev:arm64 libxext-dev:arm64 libxrandr-dev:arm64 libxinerama-dev:arm64 libxcursor-dev:arm64 \
+        libfreetype-dev:arm64 libfontconfig1-dev:arm64 \
+    && rm -rf /var/lib/apt/lists/*
