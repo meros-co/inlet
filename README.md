@@ -16,7 +16,7 @@ Inlet is in early development and is not yet usable.
 
 ## Platforms
 
-- Windows 10 22H2 or later, and Windows 11, on x64 and ARM64. (No 32-bit ASIO hosts.)
+- Windows 10 22H2 or later, and Windows 11, on x64. (No 32-bit ASIO hosts.)
 - macOS 13 or later, universal binaries.
 - Linux on x86-64: Ubuntu 22.04 or later, Debian 12 or later, Fedora, RHEL, Rocky or Alma Linux 9 or later, and Arch
   Linux, with systemd and PipeWire or ALSA.
