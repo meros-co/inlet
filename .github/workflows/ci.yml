@@ -1,0 +1,147 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 Meros Inc.
+#
+# Builds Inlet and runs its tests on Windows, macOS and Linux, and keeps the
+# test packages each makes (unsigned) as the run's artifacts.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install GStreamer (MSVC x86_64 runtime and development files)
+        shell: pwsh
+        run: |
+          $version = "1.26.11"
+          $base = "https://gstreamer.freedesktop.org/data/pkg/windows/$version/msvc"
+          $installers = [ordered]@{
+            "gstreamer-1.0-msvc-x86_64-$version.msi"       = "31cbc21fa0950b5c1e79c80959b2799805cb05a7a35953a13a9f790776137605"
+            "gstreamer-1.0-devel-msvc-x86_64-$version.msi" = "af0a0720692052aaf5fb0cf2847ef34a87016ef0f914328d516f049e6c86f587"
+          }
+          foreach ($name in $installers.Keys) {
+            $file = Join-Path $env:RUNNER_TEMP $name
+            Invoke-WebRequest "$base/$name" -OutFile $file
+            if ((Get-FileHash $file -Algorithm SHA256).Hash -ne $installers[$name]) { throw "$name does not match its checksum" }
+            $p = Start-Process msiexec.exe -ArgumentList "/i `"$file`" /qn /norestart ADDLOCAL=ALL" -Wait -PassThru
+            if ($p.ExitCode -ne 0) { throw "$name did not install ($($p.ExitCode))" }
+          }
+          $root = [Environment]::GetEnvironmentVariable("GSTREAMER_1_0_ROOT_MSVC_X86_64", "Machine").TrimEnd("\")
+          if (-not (Test-Path "$root\include\gstreamer-1.0\gst\net\gstptpclock.h")) { throw "GStreamer's development files are not at $root" }
+          "GSTREAMER_ROOT=$root" >> $env:GITHUB_ENV
+          "$root\bin" >> $env:GITHUB_PATH
+
+      - name: Build and test
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && set" | ForEach-Object {
+            if ($_ -match "^(.*?)=(.*)$") { Set-Item -Path "env:$($Matches[1])" -Value $Matches[2] }
+          }
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DGSTREAMER_ROOT=$env:GSTREAMER_ROOT"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --build build
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ctest --test-dir build --output-on-failure
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: Package
+        shell: pwsh
+        run: |
+          # The JUCE the test build fetched, not a second download.
+          packaging\windows\build-package.ps1 -GStreamerRoot $env:GSTREAMER_ROOT -JuceSource "$PWD\build\_deps\juce-src"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: inlet-windows-x64
+          path: dist/Inlet-*-windows-x64.zip
+          if-no-files-found: error
+
+  macos:
+    name: macOS
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install the build tools and GStreamer
+        run: brew install ninja pkgconf gstreamer
+
+      - name: Build and test
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+          ctest --test-dir build --output-on-failure
+
+      - name: Package
+        run: packaging/macos/build-package.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: inlet-macos
+          path: dist/Inlet-*-macos.pkg
+          if-no-files-found: error
+
+  linux:
+    name: Linux (${{ matrix.distro }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: debian12   # the .deb for Debian and Ubuntu
+            package: DEB
+          - distro: rocky9     # the .rpm for RHEL, Rocky, Alma and Fedora
+            package: RPM
+          - distro: arch
+            package: ""
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build the ${{ matrix.distro }} build image
+        run: docker build -t inlet-build:${{ matrix.distro }} -f packaging/linux/docker/Dockerfile.${{ matrix.distro }} packaging/linux/docker
+
+      - name: Build, test and package
+        run: |
+          docker run --rm --user root -e PACKAGE=${{ matrix.package }} -v "$PWD:/src" -w /src inlet-build:${{ matrix.distro }} bash -c '
+            set -e
+            git config --global --add safe.directory "*"
+            cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+            cmake --build build
+            ctest --test-dir build --output-on-failure
+            if [ -n "$PACKAGE" ]; then (cd build && cpack -G "$PACKAGE"); fi
+            chown -R "'"$(id -u):$(id -g)"'" build'
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.package != ''
+        with:
+          name: inlet-linux-${{ matrix.distro }}
+          path: |
+            build/*.deb
+            build/*.rpm
+          if-no-files-found: error
