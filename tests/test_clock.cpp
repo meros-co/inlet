@@ -57,6 +57,9 @@ static void seqlockNeverTears()
             map.publish(s);
         }
     });
+    // Not before the writer's first sample (a loaded machine may start it late).
+    for (ClockSample first; !map.read(first);)
+        std::this_thread::yield();
     int reads = 0;
     for (int i = 0; i < 2'000'000; ++i)
     {

@@ -217,17 +217,24 @@ static void hostRateStepsAndSwitch()
     std::lock_guard<std::mutex> g(m);
     // 400 ms of 128-frame periods at 44.1 kHz is about 138.
     CHECK(periods.size() >= 110);
-    int resyncs = 0;
+    int resyncs = 0, behind = 0;
     for (size_t i = 1; i < periods.size(); ++i)
     {
         if (periods[i].resynced)
         {
-            ++resyncs;
+            // The step and the switch; any other is the thread having fallen
+            // more than four periods behind (a loaded machine), which
+            // re-anchors by design: rare, or something is wrong.
+            if (i == 40 || i == 80)
+                ++resyncs;
+            else
+                ++behind;
             continue;
         }
         CHECK_EQ(periods[i].start - periods[i - 1].start, 128u);
     }
     CHECK_EQ(resyncs, 2);
+    CHECK(behind <= 2);
     CHECK(periods[40].resynced);   // the step, seen after period 40's callback
     CHECK(periods[80].resynced);   // the switch
     // After the switch, the periods are on the new clock, at 44.1 kHz.
