@@ -14,7 +14,7 @@
  *   POST /inlet/v1/profiles/{multitrack|playback}
  * and, for the Inlet app or another program on this computer only (loopback),
  * everything inletd needs to run without the app:
- *   GET/PUT /inlet/v1/settings            channel counts, rate, labelPrefix, ...
+ *   GET/PUT /inlet/v1/settings            channel counts, rate, labelPrefix, nmos (false: no node), ...
  *   GET /inlet/v1/interfaces,
  *   GET/POST /inlet/v1/streams, DELETE /inlet/v1/streams/{id}   heard by SAP or NMOS, or an SDP
  *   GET /inlet/v1/receivers               with health: packets, lost, late, ptpOffsetUs, last packet

@@ -270,6 +270,13 @@ static void settings()
     CHECK(!c.applySettings(nlohmann::json::parse(R"({"labelPrefix": ""})"), err));
     CHECK(!c.applySettings(nlohmann::json::parse(R"({"labelPrefix": "two\nlines"})"), err));
     CHECK(c.labelPrefix == "Desk");
+
+    // A consumer that presents the streams in its own NMOS node turns Inlet's off.
+    CHECK(c.nmos && c.settingsJson()["nmos"] == true);
+    CHECK(c.applySettings(nlohmann::json::parse(R"({"nmos": false})"), err));
+    CHECK(!c.nmos && c.settingsJson()["nmos"] == false);
+    CHECK(!c.applySettings(nlohmann::json::parse(R"({"nmos": "off"})"), err));
+    CHECK(!c.nmos);
 }
 
 int main()

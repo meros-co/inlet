@@ -231,7 +231,10 @@ bool Engine::start(std::string& error)
     nc.tags = { { "urn:x-meros:product", nlohmann::json::array({ "inlet" }) },
                 { "urn:x-meros:version", nlohmann::json::array({ kVersion }) },
                 { "urn:x-meros:os", nlohmann::json::array({ osDescription() }) } };
-    d.nmos = std::make_unique<NmosNode>(*d.streams, nc);
+    // With NMOS off, nothing is advertised or registered and /x-nmos is not
+    // served: a program that runs inletd presents its streams in its own node.
+    if (c.nmos)
+        d.nmos = std::make_unique<NmosNode>(*d.streams, nc);
     d.streams->onChanged = [&d] {
         d.dirty = true;
         if (d.nmos)
@@ -243,7 +246,8 @@ bool Engine::start(std::string& error)
 
     d.routes();
     d.httpThread = std::thread([&d] { d.http.listen_after_bind(); });
-    d.nmos->start();
+    if (d.nmos)
+        d.nmos->start();
 
     d.running = true;
     d.clockThread = std::thread([&d] { d.clockLoop(); });
@@ -313,7 +317,7 @@ void Engine::Impl::clockLoop()
 
         // The NMOS node describes the clock; tell it when that changes.
         const bool locked = s.state == ClockState::Locked;
-        if (locked != lastLocked || std::memcmp(lastGm, s.gmIdentity, 8) != 0)
+        if (nmos && (locked != lastLocked || std::memcmp(lastGm, s.gmIdentity, 8) != 0))
         {
             NmosNode::Clock nc;
             nc.ptp = s.state != ClockState::FreeRun;
@@ -468,7 +472,7 @@ nlohmann::json Engine::Impl::status() const
              { "drivers", drivers }, { "hosts", hosts }, { "clients", clients }, { "ptp", ptpJson() },
              { "sap", { { "announcing", sap != nullptr }, { "listening", sap != nullptr && sap->listening() }, { "warning", sap != nullptr ? sap->warning() : sapWarning } } },
              { "receivers", receivers }, { "senders", senders },
-             { "nmos", { { "nodeId", config.nodeId }, { "deviceId", config.deviceId } } } };
+             { "nmos", { { "enabled", nmos != nullptr }, { "nodeId", config.nodeId }, { "deviceId", config.deviceId } } } };
 }
 
 int Engine::Impl::receiverIndexOf(const std::string& id) const
@@ -494,7 +498,7 @@ void Engine::Impl::routes()
     // NMOS: everything under /x-nmos and /manifests goes to the node.
     auto nmosHandler = [this](const httplib::Request& req, httplib::Response& res) {
         NmosNode::HttpResponse out;
-        if (!nmos->handleHttp(req.method, req.path, req.body, out))
+        if (!nmos || !nmos->handleHttp(req.method, req.path, req.body, out))
             out = { 404, "application/json", R"({"code":404,"error":"not found"})" };
         res.status = out.status;
         res.set_content(out.body, out.contentType);
@@ -675,10 +679,14 @@ void Engine::Impl::routes()
         sendJson(res, 200, { { "index", std::stoi(req.matches[1]) } });
     });
 
-    http.Get("/inlet/v1/nmos", [this](const httplib::Request&, httplib::Response& res) { sendJson(res, 200, nmos->toJson()); });
+    http.Get("/inlet/v1/nmos", [this](const httplib::Request&, httplib::Response& res) {
+        sendJson(res, 200, nmos ? nmos->toJson() : nlohmann::json { { "enabled", false } });
+    });
     http.Post("/inlet/v1/peers", [this, local, parse](const httplib::Request& req, httplib::Response& res) {
         if (!local(req, res))
             return;
+        if (!nmos)
+            return sendError(res, 409, "NMOS is off in the settings");
         nlohmann::json body;
         if (!parse(req, res, body))
             return;
@@ -688,6 +696,8 @@ void Engine::Impl::routes()
     http.Delete("/inlet/v1/peers", [this, local, parse](const httplib::Request& req, httplib::Response& res) {
         if (!local(req, res))
             return;
+        if (!nmos)
+            return sendError(res, 409, "NMOS is off in the settings");
         nlohmann::json body;
         if (!parse(req, res, body))
             return;

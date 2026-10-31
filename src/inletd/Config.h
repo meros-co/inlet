@@ -31,6 +31,7 @@ struct Config
     uint32_t linkOffsetUs = 0;       ///< 0: 3 ms
 
     // NMOS and the API
+    bool nmos = true;                ///< false: no NMOS node, for a program that presents Inlet's streams in its own
     int apiPort = 8091;
     std::string label;               ///< empty: "Inlet (<host name>)"
     std::string labelPrefix = "Net";   ///< receivers are "<prefix> In k", senders "<prefix> Out k"

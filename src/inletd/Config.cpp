@@ -28,12 +28,13 @@ nlohmann::json Config::settingsJson() const
     return { { "interfaceIp", interfaceIp }, { "ptpDomain", ptpDomain }, { "sampleRate", sampleRate },
              { "inputs", inputs }, { "outputs", outputs }, { "receivers", receivers },
              { "receiverChannels", receiverChannels }, { "senders", senders }, { "senderChannels", senderChannels },
-             { "linkOffsetUs", linkOffsetUs }, { "apiPort", apiPort }, { "label", label },
+             { "linkOffsetUs", linkOffsetUs }, { "nmos", nmos }, { "apiPort", apiPort }, { "label", label },
              { "labelPrefix", labelPrefix }, { "registryUrl", registryUrl } };
 }
 
 bool Config::applySettings(const nlohmann::json& j, std::string& error)
 {
+    error.clear();
     if (!j.is_object())
     {
         error = "settings must be an object";
@@ -52,6 +53,7 @@ bool Config::applySettings(const nlohmann::json& j, std::string& error)
         next.senders = j.value("senders", next.senders);
         next.senderChannels = j.value("senderChannels", next.senderChannels);
         next.linkOffsetUs = j.value("linkOffsetUs", next.linkOffsetUs);
+        next.nmos = j.value("nmos", next.nmos);
         next.apiPort = j.value("apiPort", next.apiPort);
         next.label = j.value("label", next.label);
         next.labelPrefix = j.value("labelPrefix", next.labelPrefix);
