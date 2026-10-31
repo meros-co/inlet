@@ -37,6 +37,7 @@ set(CPACK_PACKAGE_DESCRIPTION
 (through PipeWire, or ALSA directly), and it sends and receives AES67 streams on the network, on the PTP \
 media clock (through linuxptp), announced by SAP and NMOS.")
 set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/meros-co/inlet")
+# No email address: support is through the project's GitHub issues and meros.co.
 set(CPACK_PACKAGE_CONTACT "Meros Inc.")
 set(CPACK_RESOURCE_FILE_LICENSE ${PROJECT_SOURCE_DIR}/LICENSE)
 set(CPACK_GENERATOR "DEB;RPM" CACHE STRING "Package formats")
