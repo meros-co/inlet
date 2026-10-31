@@ -6,7 +6,9 @@
 # GStreamer runtime inletd needs for PTP, and the install scripts. Unsigned:
 # Azure Artifact Signing is not set up yet.
 #
-#   powershell -ExecutionPolicy Bypass -File packaging\windows\build-package.ps1 [-JuceSource <dir>] [-GStreamerRoot <dir>]
+#   powershell -ExecutionPolicy Bypass -File packaging\windows\build-package.ps1 [-JuceSource <dir>] [-GStreamerRoot <dir>] [-OutDir <dir>]
+#
+# The folder and the zip go to dist, or to -OutDir.
 #
 # Needs Visual Studio 2022 or later (C++), CMake 3.24+, Ninja, and the GStreamer
 # MSVC x86_64 runtime + development installers (1.24 or later).
@@ -14,11 +16,13 @@
 param(
     [string]$JuceSource = "",
     [string]$GStreamerRoot = $(if ($env:GSTREAMER_1_0_ROOT_MSVC_X86_64) { $env:GSTREAMER_1_0_ROOT_MSVC_X86_64 } else { "C:\Program Files\gstreamer\1.0\msvc_x86_64" }),
-    [string]$BuildDir = ""
+    [string]$BuildDir = "",
+    [string]$OutDir = ""
 )
 $ErrorActionPreference = "Stop"
 $root = (Resolve-Path "$PSScriptRoot\..\..").Path
 if (-not $BuildDir) { $BuildDir = Join-Path $root "build-release" }
+if (-not $OutDir) { $OutDir = Join-Path $root "dist" }
 
 # The MSVC environment, from the newest Visual Studio with C++.
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -37,7 +41,7 @@ if ($LASTEXITCODE) { throw "build failed" }
 
 $version = (Select-String -Path (Join-Path $root "CMakeLists.txt") -Pattern "project\(Inlet VERSION ([0-9.]+)").Matches[0].Groups[1].Value
 $name = "Inlet-$version-windows-x64"
-$dist = Join-Path $root "dist\$name"
+$dist = Join-Path $OutDir $name
 if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
 New-Item -ItemType Directory -Force $dist | Out-Null
 
@@ -71,7 +75,7 @@ New-Item -ItemType Directory -Force "$dist\licences" | Out-Null
 Copy-Item "$root\src\app\assets\fonts\Inter-OFL.txt" "$dist\licences\Inter-OFL.txt"
 Copy-Item "$root\src\app\assets\icons\PHOSPHOR-LICENSE.txt" "$dist\licences\Phosphor-LICENSE.txt"
 
-$zip = Join-Path $root "dist\$name.zip"
+$zip = Join-Path $OutDir "$name.zip"
 if (Test-Path $zip) { Remove-Item -Force $zip }
 Compress-Archive -Path "$dist\*" -DestinationPath $zip
 Write-Host "Package: $zip"
