@@ -7,7 +7,8 @@ to the network as AES67 streams. A console or any NMOS controller can find and
 route it.
 
 Needs: Windows 10 22H2 or Windows 11, x64, a WIRED network interface on the
-AES67 network (Wi-Fi cannot carry the streams), and an ASIO host (REAPER,
+AES67 network (Inlet warns on Wi-Fi, which carries the streams poorly), and an
+ASIO host (REAPER,
 Cubase, Studio One, ...). A PTP grandmaster on the network for clock lock;
 without one, Inlet runs on the computer's own clock and says so.
 
