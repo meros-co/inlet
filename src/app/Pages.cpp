@@ -395,6 +395,8 @@ void StatusPage::paintOnline(juce::Graphics& g)
     const auto sap = st.getProperty("sap", {});
     if (message.isNotEmpty())
         drawStrip(g, r.withTrimmedTop(juce::jmax(0, r.getHeight() - 40)), message, messageState);
+    else if (str(st, "sendingBlocked").isNotEmpty() && r.getHeight() >= 48)
+        drawStrip(g, r.withTrimmedTop(r.getHeight() - 40), str(st, "sendingBlocked"), State::Warn);
     else if (str(sap, "warning").isNotEmpty() && r.getHeight() >= 48)
         drawStrip(g, r.withTrimmedTop(r.getHeight() - 40), str(sap, "warning"), State::Warn);
 }

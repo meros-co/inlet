@@ -423,6 +423,11 @@ std::string StreamManager::makeSdp(const Sender& s) const
 
 bool StreamManager::openSender(Sender& s, std::string& error)
 {
+    if (!cfg.sendingBlocked.empty())
+    {
+        error = cfg.sendingBlocked;
+        return false;
+    }
     uint32_t group = 0;
     if (!aes67_parse_ipv4(s.group.c_str(), &group))
     {

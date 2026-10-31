@@ -49,6 +49,13 @@ void InletdClient::run()
 {
     while (!threadShouldExit())
     {
+#if JUCE_MAC
+        // What each pass's requests autorelease is freed with the pass.
+        // JUCE's one pool for the thread's whole life kept it all, growing,
+        // and freed it only as the app quit, after the objects it referred
+        // to: a crash on every quit.
+        const juce::ScopedAutoReleasePool pool;
+#endif
         // Actions first, so the poll that follows shows their effect.
         juce::Array<Pending> todo;
         {

@@ -24,6 +24,9 @@ Check
 -----
 - Inlet app, Status page: the network interface should be your wired AES67
   interface. If not, choose it on the Settings page and press Apply.
+- On Wi-Fi, Inlet does not send (its 64 channels are about 75 Mb/s, which a
+  Wi-Fi network cannot carry), and the Status page says so. Choosing the
+  Wi-Fi interface on the Settings page sends on it anyway.
 - Status page, Clock: "Locked to the grandmaster" when your network has one.
 - Audio MIDI Setup lists "Inlet" with 64 inputs and 64 outputs (by default).
   Its Configure button opens the Inlet app.
@@ -60,9 +63,10 @@ Start, Stop and quitting
   the device's shape; Core Audio tells applications using it.
 - Menu-bar menu, "Quit the Inlet app": the window and the icon go; the sound
   card keeps running. Open Inlet from Applications to bring the app back.
-- "Quit Inlet completely": stops inletd, then quits the app. Inlet comes back
-  when you open the app and press "Start Inlet", at your next sign-in, or when
-  the Mac restarts (inletd starts with the Mac).
+- "Quit Inlet completely": stops inletd, then quits the app.
+- A stop lasts: restarting the Mac, signing in again or installing Inlet again
+  leaves inletd stopped until you press "Start Inlet". Unless you stopped it,
+  inletd starts with the Mac.
 
 Loopback self-test (no other device needed)
 -------------------------------------------

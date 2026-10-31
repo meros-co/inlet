@@ -25,6 +25,9 @@
 #  include <unistd.h>
 #  if defined(__APPLE__)
 #    include <net/if_dl.h>
+#    include <net/if_media.h>
+#    include <sys/ioctl.h>
+#    include <sys/sockio.h>
 #    include <sys/sysctl.h>
 #  else
 #    include <netpacket/packet.h>
@@ -144,6 +147,20 @@ std::vector<std::string> gatewayInterfaces()
 }
 
 } // namespace
+#elif defined(__APPLE__)
+/** Wi-Fi: the interface's media is 802.11. (A Mac's Wi-Fi is often en0, so
+    the name says nothing.) */
+bool isWireless(const char* name)
+{
+    const int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0)
+        return false;
+    ifmediareq m {};
+    std::strncpy(m.ifm_name, name, sizeof m.ifm_name - 1);
+    const bool wifi = ioctl(fd, SIOCGIFMEDIA, &m) == 0 && IFM_TYPE(m.ifm_current) == IFM_IEEE80211;
+    close(fd);
+    return wifi;
+}
 #endif
 
 std::vector<NetInterface> listInterfaces()
@@ -174,6 +191,8 @@ std::vector<NetInterface> listInterfaces()
         n.wireless = exists(sys + "/wireless") || exists(sys + "/phy80211");
         n.virtualSwitch = !n.loopback && !exists(sys + "/device");
         n.gateway = std::find(gateways.begin(), gateways.end(), n.name) != gateways.end();
+#elif defined(__APPLE__)
+        n.wireless = isWireless(a->ifa_name);
 #endif
         for (ifaddrs* l = list; l != nullptr; l = l->ifa_next)
         {

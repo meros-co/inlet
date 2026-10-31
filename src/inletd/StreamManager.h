@@ -62,6 +62,9 @@ public:
         std::string groupPrefix;         ///< "239.69.<last octet>" by default; sender k is <prefix>.<k>
         uint32_t linkOffsetFrames = 96;
         std::string labelPrefix = "Net";
+        /** Why no sender may send on this interface (Wi-Fi nobody chose):
+            senders stay enabled in the settings but none opens. Empty: they may. */
+        std::string sendingBlocked;
     };
 
     StreamManager(shm::Region& region, aes67_netrx_t* rx, NetTx& tx, Sap* sap, const Settings& settings);

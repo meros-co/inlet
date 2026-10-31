@@ -7,8 +7,8 @@
 // starting it again (as the ASIO driver's control panel, or Audio MIDI Setup's
 // Configure button, does) brings the window up.
 //
-//   Inlet.exe [--tray]      --tray: start hidden (at sign-in), and start the
-//                           service if it is stopped
+//   Inlet.exe [--tray]      --tray: start hidden (at sign-in), and on Windows
+//                           start the service if it is stopped
 
 #include "Assets.h"
 #include "InletLookAndFeel.h"
@@ -226,14 +226,32 @@ private:
         else
             m.addItem("Start Inlet", [this] { if (onStart) onStart(); });
         m.addSeparator();
+#if JUCE_MAC
+        // A native menu shows one line per item.
+        m.addItem("Quit the Inlet App", [this] { if (onQuitApp) onQuitApp(); });
+        m.addItem("Quit Inlet Completely", [this] { if (onQuitAll) onQuitAll(); });
+#else
         m.addItem("Quit the Inlet app\nThe sound card keeps running", [this] { if (onQuitApp) onQuitApp(); });
         m.addItem("Quit Inlet completely\nStops the sound card until you start it again", [this] { if (onQuitAll) onQuitAll(); });
+#endif
         return m;
     }
 
     juce::String shownState;
     bool shownLight = false;
 };
+
+#if JUCE_MAC
+/** The app's menu bar: the application menu alone. JUCE makes the menu-bar
+    icon's native menu, and runs its items, only while the app has one. */
+class MacMenuBar : public juce::MenuBarModel
+{
+public:
+    juce::StringArray getMenuBarNames() override { return {}; }
+    juce::PopupMenu getMenuForIndex(int, const juce::String&) override { return {}; }
+    void menuItemSelected(int, int) override {}
+};
+#endif
 
 class InletApplication : public juce::JUCEApplication
 {
@@ -253,6 +271,9 @@ public:
     void initialise(const juce::String& commandLine) override
     {
         juce::LookAndFeel::setDefaultLookAndFeel(&lookAndFeel);
+#if JUCE_MAC
+        juce::MenuBarModel::setMacMainMenu(&menuBar);
+#endif
 #if JUCE_DEBUG
         // A test inletd on another port: Inlet.exe --dev --port=8092
         if (const auto p = commandLine.fromFirstOccurrenceOf("--port=", false, false); p.isNotEmpty())
@@ -290,13 +311,16 @@ public:
 
         if (commandLine.contains("--tray"))
         {
+#if !JUCE_MAC
             // At sign-in: bring the sound card back if it was stopped (the
             // service starts with the computer; this covers a stop since).
+            // On macOS a stop lasts until Start Inlet, sign-ins included.
             if (service::query() == service::Status::Stopped)
             {
                 juce::String ignored;
                 service::start(ignored);
             }
+#endif
         }
         else
             show();
@@ -309,6 +333,9 @@ public:
 
     void shutdown() override
     {
+#if JUCE_MAC
+        juce::MenuBarModel::setMacMainMenu(nullptr);
+#endif
         tray.reset();
         window.reset();
         client.reset();
@@ -380,6 +407,9 @@ private:
     }
 
     InletLookAndFeel lookAndFeel;
+#if JUCE_MAC
+    MacMenuBar menuBar;
+#endif
     std::unique_ptr<juce::TooltipWindow> tooltips;
     std::unique_ptr<InletdClient> client;
     std::unique_ptr<MainWindow> window;

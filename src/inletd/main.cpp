@@ -37,6 +37,7 @@
 #elif defined(__APPLE__)
 #  include <cstdlib>
 #  include <launch.h>
+#  include <poll.h>
 #  include <sys/socket.h>
 #  include <thread>
 #  include <unistd.h>
@@ -61,6 +62,15 @@ void requestQuit()
     }
     gWake.notify_all();
 }
+
+#if defined(__APPLE__)
+/** Beside the settings while the Inlet app has Inlet stopped: the Mac starting
+    again, or someone signing in, leaves it stopped until Start Inlet. */
+std::string stoppedMarker(const std::string& configPath)
+{
+    return (std::filesystem::path(configPath).parent_path() / "stopped").string();
+}
+#endif
 
 /** Runs engines until asked to quit: a new one whenever the settings change,
     and again after a failure (the network may not be up yet at boot). */
@@ -98,8 +108,13 @@ int runDaemon(const std::string& configPath)
             }
             gWake.notify_all();
         };
-        engine.onStop = [] {
+        engine.onStop = [configPath] {
             std::fprintf(stderr, "inletd: stopping, as the Inlet app asked\n");
+#if defined(__APPLE__)
+            std::FILE* f = std::fopen(stoppedMarker(configPath).c_str(), "w");
+            if (f != nullptr)
+                std::fclose(f);
+#endif
             if (gStopPending)
                 gStopPending();
             requestQuit();
@@ -234,13 +249,21 @@ int installService(bool install)
 #if defined(__APPLE__)
 /** Started by launchd: takes the "Start" socket it listens on for inletd and
     answers its connections (by closing them), so launchd sees them handled.
-    Nothing when inletd was started some other way. */
-void serveStartSocket()
+    True when a connection was waiting: launchd started inletd because the
+    Inlet app asked it to (Start Inlet), not because the Mac started. False
+    when inletd was started some other way. */
+bool serveStartSocket()
 {
     int* fds = nullptr;
     size_t count = 0;
     if (launch_activate_socket("Start", &fds, &count) != 0 || count == 0)
-        return;
+        return false;
+    bool asked = false;
+    for (size_t i = 0; i < count; ++i)
+    {
+        pollfd p { fds[i], POLLIN, 0 };
+        asked = asked || (poll(&p, 1, 0) > 0 && (p.revents & POLLIN));
+    }
     for (size_t i = 0; i < count; ++i)
         std::thread([fd = fds[i]] {
             for (;;)
@@ -251,7 +274,9 @@ void serveStartSocket()
             }
         }).detach();
     free(fds);
+    return asked;
 }
+
 #endif
 
 } // namespace
@@ -293,7 +318,21 @@ int main(int argc, char** argv)
 #endif
 #if defined(__APPLE__)
     if (!console)
-        serveStartSocket();
+    {
+        const bool asked = serveStartSocket();
+        std::error_code ec;
+        const std::string marker = stoppedMarker(configPath);
+        if (std::filesystem::exists(marker, ec))
+        {
+            if (!asked)
+            {
+                // A clean exit: launchd leaves it stopped.
+                std::fprintf(stderr, "inletd: stopped from the Inlet app; not starting until Start Inlet\n");
+                return 0;
+            }
+            std::filesystem::remove(marker, ec);
+        }
+    }
 #endif
     std::signal(SIGINT, [](int) { requestQuit(); });
     std::signal(SIGTERM, [](int) { requestQuit(); });

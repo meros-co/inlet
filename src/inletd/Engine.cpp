@@ -99,6 +99,7 @@ struct Engine::Impl
 #endif
     std::string ptpReason;
     std::string sapWarning;
+    std::string sendingBlocked;   // why senders may not send (Wi-Fi nobody chose); empty when they may
     std::unique_ptr<ClockDiscipline> discipline;
 
     std::atomic<bool> running { false };
@@ -139,7 +140,16 @@ bool Engine::start(std::string& error)
         error = c.interfaceIp.empty() ? "no network interface is up" : "the interface " + c.interfaceIp + " is not up";
         return false;
     }
-    if (d.iface.wireless)
+    // 64 channels go out at about 75 Mb/s whether or not anything plays,
+    // which a Wi-Fi network cannot carry and its other users notice. On Wi-Fi
+    // Inlet sends only when that interface was chosen in the settings.
+    if (d.iface.wireless && c.interfaceIp.empty())
+    {
+        d.sendingBlocked = d.iface.name + " is Wi-Fi, so Inlet is not sending. Choose a wired interface on the Settings page "
+                           "(or choose " + d.iface.name + " there to send on Wi-Fi anyway).";
+        std::fprintf(stderr, "inletd: %s\n", d.sendingBlocked.c_str());
+    }
+    else if (d.iface.wireless)
         std::fprintf(stderr, "inletd: warning: %s is wireless; AES67 and PTP need a wired network\n", d.iface.name.c_str());
     if (c.nodeId.empty())
         c.nodeId = randomUuid();
@@ -208,6 +218,7 @@ bool Engine::start(std::string& error)
     ss.senderChannels = c.senderChannels;
     ss.linkOffsetFrames = c.linkOffsetFrames();
     ss.labelPrefix = c.labelPrefix;
+    ss.sendingBlocked = d.sendingBlocked;
     d.streams = std::make_unique<StreamManager>(*d.region, d.netRx.get(), *d.netTx, d.sap.get(), ss);
     if (d.sap)
         d.sap->onHeard = [&d](const std::string& key, const std::string& sdp) { d.streams->sapHeard(key, sdp); };
@@ -470,6 +481,7 @@ nlohmann::json Engine::Impl::status() const
              { "sampleRate", config.sampleRate }, { "bufferSize", buffer }, { "inputs", config.inputs },
              { "outputs", config.outputs }, { "linkOffsetFrames", region->header().linkOffsetFrames.load() },
              { "drivers", drivers }, { "hosts", hosts }, { "clients", clients }, { "ptp", ptpJson() },
+             { "sendingBlocked", sendingBlocked },
              { "sap", { { "announcing", sap != nullptr }, { "listening", sap != nullptr && sap->listening() }, { "warning", sap != nullptr ? sap->warning() : sapWarning } } },
              { "receivers", receivers }, { "senders", senders },
              { "nmos", { { "enabled", nmos != nullptr }, { "nodeId", config.nodeId }, { "deviceId", config.deviceId } } } };
