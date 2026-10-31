@@ -192,6 +192,16 @@ std::unique_ptr<Region> Region::create(const Layout& l, std::string& error, cons
         error = "ftruncate failed";
         return nullptr;
     }
+#  if defined(__linux__)
+    // Taken now: /dev/shm is a tmpfs that may be smaller than the region (a
+    // container's is 64 MB), and a page it cannot back is a SIGBUS later.
+    if (const int e = posix_fallocate(r->fd, 0, (off_t) o.total); e != 0)
+    {
+        error = "not enough shared memory for Inlet: " + std::to_string((o.total + (1u << 20) - 1) >> 20)
+              + " MB needed in /dev/shm (" + std::strerror(e) + ")";
+        return nullptr;
+    }
+#  endif
     fchmod(r->fd, 0666);
     base = mmap(nullptr, o.total, PROT_READ | PROT_WRITE, MAP_SHARED, r->fd, 0);
     if (base == MAP_FAILED)
