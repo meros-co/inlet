@@ -237,9 +237,76 @@ static void hostRateStepsAndSwitch()
     CHECK_EQ(daemonB->clients()[0].sampleRate.load(), 44100u);
 }
 
+/** Each client counts the frames it asked of a receiver and did not get, once
+    per frame whichever of the receiver's channels it read, into the region. */
+static void countsMissingFrames()
+{
+    const std::string name = regionName() + "m";
+    std::string err;
+    shm::Region::Layout layout;
+    layout.inputs = 4;
+    layout.outputs = 2;
+    layout.receivers = 2;
+    layout.receiverChannels = 2;
+    auto daemon = shm::Region::create(layout, err, name.c_str());
+    CHECK(daemon != nullptr);
+    if (!daemon)
+        return;
+    daemon->header().linkOffsetFrames.store(0);
+    daemon->header().daemonHeartbeatMono.store(monoNowNs());
+    // Inputs 1-2: receiver 1's two channels; input 3: receiver 2, never written.
+    daemon->inputMap()[0].store(shm::mapCell(1, 0));
+    daemon->inputMap()[1].store(shm::mapCell(1, 1));
+    daemon->inputMap()[2].store(shm::mapCell(2, 0));
+    // Frames 1000..1099 on both channels, but for one 8-frame packet that never came.
+    for (int c = 0; c < 2; ++c)
+        for (uint32_t t = 1000; t < 1100; ++t)
+            if (t < 1040 || t >= 1048)
+                aes67_ring_write(daemon->rxRings(1) + c, t, (int32_t) t);
+    auto missing = [&](int receiver) { return daemon->receiverStats(receiver).missingFrames.load(); };
+
+    DeviceClient::Options opt;
+    opt.app = "recorder";
+    opt.regionName = name.c_str();
+    auto a = DeviceClient::attach(opt, err);
+    CHECK(a != nullptr);
+    if (!a)
+        return;
+    std::vector<int32_t> buf(64);
+    a->readInputRaw(1000, 0, buf.data(), 50);
+    CHECK_EQ(buf[39], 1039);
+    CHECK_EQ(buf[40], 0);   // the lost packet: silence, not what the slot held before
+    CHECK_EQ(missing(1), 8u);
+    a->readInputRaw(1000, 1, buf.data(), 50);   // the receiver's other channel, same frames
+    CHECK_EQ(missing(1), 8u);
+    a->readInputRaw(1000, 2, buf.data(), 50);   // no stream on receiver 2: not loss
+    CHECK_EQ(missing(2), 0u);
+    // The float path, two channels a period: 1090..1109, of which 1100..1109 have not arrived.
+    std::vector<float> f0(20), f1(20);
+    float* chans[4] = { f0.data(), f1.data(), nullptr, nullptr };
+    a->readInputs(1090, chans, 4, 20);
+    CHECK_EQ(missing(1), 18u);
+    // Partly read before: only the new frames count.
+    a->readInputRaw(1105, 0, buf.data(), 10);
+    CHECK_EQ(missing(1), 23u);
+
+    // A client that reconnects carries on from the region's count.
+    a.reset();
+    auto b = DeviceClient::attach(opt, err);
+    CHECK(b != nullptr);
+    if (!b)
+        return;
+    std::vector<int32_t> i0(10);
+    int32_t* ichans[4] = { i0.data(), nullptr, nullptr, nullptr };
+    b->readInputsInt32(1095, ichans, 4, 10);   // 1095..1104: 5 missing
+    CHECK_EQ(missing(1), 28u);
+    CHECK_EQ(i0[0], 1095 * 256);
+}
+
 int main()
 {
     sharesAudio();
+    countsMissingFrames();
     periodsOnTime();
     hostRateStepsAndSwitch();
     TEST_MAIN_END();

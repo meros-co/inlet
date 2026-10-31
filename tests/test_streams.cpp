@@ -223,6 +223,18 @@ static void streams()
     CHECK(health["late"] == 1);
     CHECK(health["ptpOffsetUs"]["max"].get<int64_t>() >= 9900);
 
+    // What the clients missed of a receiver, as they count it in the region:
+    // reported, and zeroed only with the receiver (a new stream, or stopped).
+    region->receiverStats(1).missingFrames.fetch_add(144);
+    CHECK(m.receiversJson()[0]["health"]["missingFrames"] == 144);
+    CHECK(m.receiversJson()[1]["health"]["missingFrames"] == 0);
+    CHECK(m.subscribeReceiver(1, sdp, "", err));
+    CHECK(m.receiversJson()[0]["health"]["missingFrames"] == 0);
+    region->receiverStats(1).missingFrames.fetch_add(48);
+    m.unsubscribeReceiver(1);
+    CHECK(m.receiversJson()[0]["health"]["missingFrames"] == 0);
+    CHECK(m.subscribeReceiver(1, sdp, "", err));
+
     // Senders configured headless: a group, a label, refused when wrong.
     const auto json = [](const char* text) { return nlohmann::json::parse(text); };
     CHECK(m.configureSender(1, json(R"({"group": "239.69.216.9", "label": "Desk Out 1"})"), err));

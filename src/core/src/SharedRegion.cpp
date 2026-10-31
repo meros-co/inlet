@@ -57,7 +57,7 @@ constexpr uint32_t kDirectoryMagic = 0x52444C49;   // "ILDR"
 
 struct Offsets
 {
-    size_t inputMap, clients, inputLabels, outputLabels, rxRings, txRings, total;
+    size_t inputMap, clients, inputLabels, outputLabels, rxRings, txRings, receiverStats, total;
 };
 
 Offsets offsetsFor(const Region::Layout& l)
@@ -76,6 +76,8 @@ Offsets offsetsFor(const Region::Layout& l)
     at = align64(at + sizeof(aes67_ring_t) * l.receivers * l.receiverChannels);
     o.txRings = at;
     at = align64(at + sizeof(aes67_ring_t) * l.outputs * kOutputLayers);
+    o.receiverStats = at;
+    at = align64(at + sizeof(ReceiverStats) * l.receivers);
     o.total = at;
     return o;
 }
@@ -215,6 +217,7 @@ std::unique_ptr<Region> Region::create(const Layout& l, std::string& error, cons
     head->outputLabelsOffset = o.outputLabels;
     head->rxRingsOffset = o.rxRings;
     head->txRingsOffset = o.txRings;
+    head->receiverStatsOffset = o.receiverStats;
     r->hdr = head;
 
     auto* bytes = static_cast<uint8_t*>(base);
@@ -226,6 +229,8 @@ std::unique_ptr<Region> Region::create(const Layout& l, std::string& error, cons
         aes67_ring_init(reinterpret_cast<aes67_ring_t*>(bytes + o.rxRings) + i);
     for (uint32_t i = 0; i < l.outputs * kOutputLayers; ++i)
         aes67_ring_init(reinterpret_cast<aes67_ring_t*>(bytes + o.txRings) + i);
+    for (uint32_t i = 0; i < l.receivers; ++i)
+        new (bytes + o.receiverStats + i * sizeof(ReceiverStats)) ReceiverStats();
 
     // Published last: a driver that sees the magic sees everything above.
     std::atomic_thread_fence(std::memory_order_release);
@@ -355,6 +360,22 @@ const aes67_ring* Region::inputRing(int input)
     if (receiver < 1 || (uint32_t) receiver > hdr->receivers || (uint32_t) channel >= hdr->receiverChannels)
         return nullptr;
     return rxRings(receiver) + channel;
+}
+
+int Region::inputReceiver(int input)
+{
+    if (input < 0 || (uint32_t) input >= hdr->inputs)
+        return 0;
+    const uint32_t cell = inputMap()[input].load(std::memory_order_relaxed);
+    const int receiver = (int) (cell >> 16), channel = (int) (cell & 0xFFFF);
+    if (receiver < 1 || (uint32_t) receiver > hdr->receivers || (uint32_t) channel >= hdr->receiverChannels)
+        return 0;
+    return receiver;
+}
+
+ReceiverStats& Region::receiverStats(int receiver)
+{
+    return reinterpret_cast<ReceiverStats*>(reinterpret_cast<uint8_t*>(hdr) + hdr->receiverStatsOffset)[receiver - 1];
 }
 
 /* ---- the directory -------------------------------------------------------------------- */

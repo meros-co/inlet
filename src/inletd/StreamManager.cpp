@@ -252,6 +252,7 @@ bool StreamManager::openReceiver(Receiver& r, std::string& error)
     aes67_ring* deviceRings = region.rxRings(r.index);
     for (uint32_t c = 0; c < maxCh; ++c)
         aes67_ring_init(deviceRings + c);
+    region.receiverStats(r.index).missingFrames.store(0);
 
     aes67_netrx_stream_cfg_t rc {};
     rc.group = group;
@@ -352,6 +353,7 @@ void StreamManager::unsubscribeReceiver(int index)
         aes67_ring* rings = region.rxRings(index);
         for (uint32_t c = 0; c < region.header().receiverChannels; ++c)
             aes67_ring_init(rings + c);
+        region.receiverStats(index).missingFrames.store(0);
     }
     changed();
 }
@@ -842,7 +844,8 @@ nlohmann::json StreamManager::receiversJson() const
         // present; zeros while idle.
         nlohmann::json health = { { "receiving", false }, { "packets", 0 }, { "lost", 0 }, { "late", 0 },
                                   { "reordered", 0 }, { "wrongPayload", 0 }, { "jitterWorstNs", 0 }, { "resyncs", 0 }, { "underruns", 0 },
-                                  { "latencyFrames", region.header().linkOffsetFrames.load() }, { "bridged", false } };
+                                  { "latencyFrames", region.header().linkOffsetFrames.load() }, { "bridged", false },
+                                  { "missingFrames", region.receiverStats(r.index).missingFrames.load() } };
         if (r.active)
         {
             aes67_netrx_stats_t st {};

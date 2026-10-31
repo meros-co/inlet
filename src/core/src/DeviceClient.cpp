@@ -50,6 +50,8 @@ std::unique_ptr<DeviceClient> DeviceClient::attach(const Options& options, std::
         return nullptr;
     std::unique_ptr<DeviceClient> c(new DeviceClient());
     c->region = std::move(region);
+    c->countedTo.assign(c->region->header().receivers, 0);
+    c->counting.assign(c->region->header().receivers, 0);
     shm::ClientSlot* slots = c->region->clients();
     for (int i = 0; i < shm::kMaxClients; ++i)
     {
@@ -141,7 +143,7 @@ void DeviceClient::readInputs(uint64_t periodStart, float* const* channels, int 
                 std::fill(dst + done, dst + done + n, 0.0f);
             else
             {
-                aes67_ring_read(ring, from + (uint32_t) done, tmp, n);   // missing frames read as zero
+                readRing(c, ring, from + (uint32_t) done, tmp, n);   // missing frames read as zero
                 for (int i = 0; i < n; ++i)
                     dst[done + i] = (float) tmp[i] * kToFloat;
             }
@@ -163,7 +165,7 @@ void DeviceClient::readInputsInt32(uint64_t periodStart, int32_t* const* channel
             std::fill(dst, dst + frames, 0);
             continue;
         }
-        aes67_ring_read(ring, from, dst, frames);
+        readRing(c, ring, from, dst, frames);
         for (int i = 0; i < frames; ++i)
             dst[i] = (int32_t) ((uint32_t) dst[i] << 8);   // 24 bits, left-justified
     }
@@ -177,7 +179,7 @@ void DeviceClient::readInputInt32(uint64_t periodStart, int channel, int32_t* ds
         std::fill(dst, dst + frames, 0);
         return;
     }
-    aes67_ring_read(ring, (uint32_t) (periodStart - (uint64_t) linkOffsetFrames()), dst, frames);
+    readRing(channel, ring, (uint32_t) (periodStart - (uint64_t) linkOffsetFrames()), dst, frames);
     for (int i = 0; i < frames; ++i)
         dst[i] = (int32_t) ((uint32_t) dst[i] << 8);   // 24 bits, left-justified
 }
@@ -197,7 +199,38 @@ void DeviceClient::readInputRaw(uint64_t position, int channel, int32_t* dst, in
     if (ring == nullptr)
         std::fill(dst, dst + frames, 0);
     else
-        aes67_ring_read(ring, (uint32_t) position, dst, frames);
+        readRing(channel, ring, (uint32_t) position, dst, frames);
+}
+
+void DeviceClient::readRing(int input, const aes67_ring* ring, uint32_t from, int32_t* dst, int frames)
+{
+    const int r = region->inputReceiver(input);
+    // A ring nothing was written to since the receiver started (no stream,
+    // or a channel past the stream's) is silence, not loss.
+    if (r == 0 || (size_t) r > countedTo.size() || aes67_ring_head(ring) == 0)
+    {
+        aes67_ring_read(ring, from, dst, frames);
+        return;
+    }
+    const size_t k = (size_t) r - 1;
+    // Frames already counted: this period's earlier channels of the receiver.
+    // A position further back than a ring is a new start.
+    int counted = 0;
+    if (counting[k])
+    {
+        const int32_t ahead = (int32_t) (countedTo[k] - from);
+        if (ahead > 0 && ahead <= AES67_RING_FRAMES)
+            counted = std::min(frames, (int) ahead);
+    }
+    if (counted > 0)
+        aes67_ring_read(ring, from, dst, counted);
+    if (counted < frames)
+    {
+        const int have = aes67_ring_read(ring, from + (uint32_t) counted, dst + counted, frames - counted);
+        region->receiverStats(r).missingFrames.fetch_add((uint64_t) (frames - counted - have), std::memory_order_relaxed);
+        countedTo[k] = from + (uint32_t) frames;
+        counting[k] = 1;
+    }
 }
 
 void DeviceClient::writeOutputRaw(uint64_t position, int channel, const int32_t* src, int frames)

@@ -33,6 +33,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace inlet
 {
@@ -106,9 +107,17 @@ public:
 
 private:
     DeviceClient() = default;
+    /** One input's ring at `from`, counting what was missing into its
+        receiver's stats once per frame: the receiver's other channels read
+        for the same frames are not counted again. */
+    void readRing(int input, const aes67_ring* ring, uint32_t from, int32_t* dst, int frames);
+
     std::unique_ptr<shm::Region> region;
     int slot = -1;
     int layer = -1;   // the output layer this client writes; -1 = none
+    // Per receiver: the frames before this position have been counted.
+    std::vector<uint32_t> countedTo;
+    std::vector<uint8_t> counting;
 };
 
 /**

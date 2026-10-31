@@ -17,7 +17,7 @@
  *   GET/PUT /inlet/v1/settings            channel counts, rate, labelPrefix, nmos (false: no node), ...
  *   GET /inlet/v1/interfaces,
  *   GET/POST /inlet/v1/streams, DELETE /inlet/v1/streams/{id}   heard by SAP or NMOS, or an SDP
- *   GET /inlet/v1/receivers               with health: packets, lost, late, ptpOffsetUs, last packet
+ *   GET /inlet/v1/receivers               with health: packets, lost, late, missingFrames, ptpOffsetUs, last packet
  *   PUT /inlet/v1/receivers/{k}           {streamId} or {sdp, senderId}; DELETE stops it
  *   GET /inlet/v1/senders                 with each open sender's SDP
  *   PUT /inlet/v1/senders/{k}             any of label, group, port, firstOutput, enabled

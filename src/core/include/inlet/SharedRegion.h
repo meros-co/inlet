@@ -53,7 +53,7 @@ namespace shm
 {
 
 constexpr uint32_t kMagic = 0x544C4E49;   // "INLT"
-constexpr uint32_t kLayoutVersion = 3;   // 3: rings of 16384 frames
+constexpr uint32_t kLayoutVersion = 4;   // 3: rings of 16384 frames; 4: receiver stats
 /** The longest period a client reads at once: PipeWire's largest quantum,
     and the ALSA plugin's largest period. */
 constexpr uint32_t kMaxPeriodFrames = 8192;
@@ -77,6 +77,18 @@ struct alignas(64) ClientSlot
     char app[kLabelBytes] = {};            ///< written before state goes to 2
 };
 
+/** What the drivers count for each receiver, kept with the region so a
+    client that reconnects carries on from it. inletd zeroes it when the
+    receiver takes a new stream or stops. */
+struct alignas(64) ReceiverStats
+{
+    /** Frames the clients asked of the receiver's rings that were not there
+        (not arrived in time, lost, or a whole ring behind): once per frame
+        of a client's read, whichever of the receiver's channels it read.
+        Only grows. */
+    std::atomic<uint64_t> missingFrames { 0 };
+};
+
 struct alignas(64) Header
 {
     uint32_t magic = 0;
@@ -90,7 +102,7 @@ struct alignas(64) Header
 
     // Offsets from the start of the region.
     uint64_t inputMapOffset = 0, clientsOffset = 0, inputLabelsOffset = 0, outputLabelsOffset = 0;
-    uint64_t rxRingsOffset = 0, txRingsOffset = 0;
+    uint64_t rxRingsOffset = 0, txRingsOffset = 0, receiverStatsOffset = 0;
 
     std::atomic<int64_t> daemonHeartbeatMono { 0 };
     std::atomic<int32_t> linkOffsetFrames { 96 };   ///< inputs play this far behind the media clock
@@ -135,6 +147,9 @@ public:
 
     /** The ring a device input reads, per the map; null = silence. */
     const aes67_ring* inputRing(int input);
+    /** The receiver (1-based) a device input reads, per the map; 0 = none. */
+    int inputReceiver(int input);
+    ReceiverStats& receiverStats(int receiver);   ///< 1-based
 
     static size_t bytesFor(const Layout& layout);
 
