@@ -4,7 +4,7 @@
 
 /*
  * Everything inletd runs, assembled from one Config: the shared region, PTP
- * (GStreamer's follower, when available), the receive and send paths, SAP,
+ * (GStreamer's follower, or linuxptp on Linux), the receive and send paths, SAP,
  * the stream manager, the NMOS node and the HTTP server that carries NMOS and
  * the Inlet API.
  *
