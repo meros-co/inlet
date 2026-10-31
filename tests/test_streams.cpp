@@ -3,14 +3,18 @@
 
 #include "check.h"
 
+#include "Config.h"
 #include "NmosNode.h"
 #include "Sap.h"
 #include "StreamManager.h"
 
 #include "inlet/SharedRegion.h"
 
+#include <chrono>
 #include <cstring>
 #include <string>
+#include <thread>
+#include <vector>
 
 #if defined(_WIN32)
 #  include <process.h>
@@ -185,6 +189,52 @@ static void streams()
         CHECK(m.receiversJson()[0]["health"].contains(key));
     CHECK(m.sendersJson()[0]["health"]["sending"] == true);
     CHECK(m.sendersJson()[0]["health"].contains("packets"));
+    CHECK(m.receiversJson()[1]["health"]["late"] == 0);
+    CHECK(!m.receiversJson()[1]["health"].contains("ptpOffsetUs"));   // nothing heard yet
+
+    // Arrival timing: receiver 1 plays our own sender 1 directly, so each
+    // packet is timed on our clock. One stamped 48 frames (1 ms) before now
+    // arrives 1 ms after its time; one stamped 10 ms before is late.
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));   // the manager sets the library's clock
+    const auto packet = [&](uint16_t seq, int64_t framesAgo) {
+        aes67_rtp_header_t h {};
+        h.payload_type = 98;
+        h.sequence = seq;
+        h.timestamp = (uint32_t) (sampleAt(free.ptpAt(monoNowNs()), 48000) - (uint64_t) framesAgo);
+        std::vector<int32_t> zeros(48 * 8, 0);
+        std::vector<uint8_t> p(1500);
+        p.resize(aes67_rtp_pack_l24(p.data(), p.size(), &h, zeros.data(), 48, 8));
+        uint32_t src = 0, dst = 0;
+        aes67_parse_ipv4("192.168.1.216", &src);
+        aes67_parse_ipv4("239.69.216.1", &dst);
+        aes67_netrx_inject(rx.get(), src, dst, 5004, p.data(), p.size(), aes67_netrx_now_ns());
+    };
+    packet(1, 48);
+    auto health = m.receiversJson()[0]["health"];
+    CHECK(health.contains("ptpOffsetUs") && health["late"] == 0);
+    if (health.contains("ptpOffsetUs"))
+    {
+        const int64_t last = health["ptpOffsetUs"]["last"];
+        CHECK(last >= 900 && last < 2000);
+    }
+    CHECK(health.contains("lastPacketAgoMs") && health.contains("lastPacketPtpNs"));
+    packet(2, 480);
+    health = m.receiversJson()[0]["health"];
+    CHECK(health["late"] == 1);
+    CHECK(health["ptpOffsetUs"]["max"].get<int64_t>() >= 9900);
+
+    // Senders configured headless: a group, a label, refused when wrong.
+    const auto json = [](const char* text) { return nlohmann::json::parse(text); };
+    CHECK(m.configureSender(1, json(R"({"group": "239.69.216.9", "label": "Desk Out 1"})"), err));
+    CHECK(m.senderSdp(1).find("c=IN IP4 239.69.216.9") != std::string::npos);
+    CHECK(m.senderSdp(1).find("s=Desk Out 1") != std::string::npos);
+    CHECK(m.sendersJson()[0]["sdp"].get<std::string>() == m.senderSdp(1));
+    CHECK(!m.configureSender(2, json(R"({"group": "239.69.216.9"})"), err));   // sender 1's
+    CHECK(!m.configureSender(2, json(R"({"group": "192.168.1.9"})"), err));    // not multicast
+    CHECK(!m.configureSender(2, json(R"({"firstOutput": 12})"), err));         // past the outputs
+    CHECK(!m.configureSender(2, json(R"({"port": 0})"), err));
+    CHECK(m.configureSender(2, json(R"({"enabled": false})"), err));
+    CHECK(!m.sendersJson()[1].contains("sdp"));
 
     // The map refuses what does not exist, all or nothing.
     CHECK(!m.setInputMap({ { 0, { 3, 0 } } }, err));
@@ -203,12 +253,29 @@ static void streams()
     CHECK(again.receivers()[1].senderId == "abc");
     CHECK(again.deviceInputLabels()[8] == "Kick");
     CHECK_EQ(again.inputMap()[0].receiver, 2);
+    CHECK(again.senders()[0].group == "239.69.216.9");
+    CHECK(again.senders()[0].label == "Desk Out 1");
+    CHECK(!again.senders()[1].enabled);
     again.stop();
+}
+
+static void settings()
+{
+    // The receivers' and senders' names start with a prefix a consumer sets.
+    Config c;
+    std::string err;
+    CHECK(c.labelPrefix == "Net");
+    CHECK(c.applySettings(nlohmann::json::parse(R"({"labelPrefix": "Desk"})"), err));
+    CHECK(c.labelPrefix == "Desk" && c.settingsJson()["labelPrefix"] == "Desk");
+    CHECK(!c.applySettings(nlohmann::json::parse(R"({"labelPrefix": ""})"), err));
+    CHECK(!c.applySettings(nlohmann::json::parse(R"({"labelPrefix": "two\nlines"})"), err));
+    CHECK(c.labelPrefix == "Desk");
 }
 
 int main()
 {
     sap();
     streams();
+    settings();
     TEST_MAIN_END();
 }

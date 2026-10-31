@@ -207,6 +207,7 @@ bool Engine::start(std::string& error)
     ss.senders = c.senders;
     ss.senderChannels = c.senderChannels;
     ss.linkOffsetFrames = c.linkOffsetFrames();
+    ss.labelPrefix = c.labelPrefix;
     d.streams = std::make_unique<StreamManager>(*d.region, d.netRx.get(), *d.netTx, d.sap.get(), ss);
     if (d.sap)
         d.sap->onHeard = [&d](const std::string& key, const std::string& sdp) { d.streams->sapHeard(key, sdp); };
@@ -669,7 +670,7 @@ void Engine::Impl::routes()
         if (!parse(req, res, body))
             return;
         std::string error;
-        if (!streams->setSenderEnabled(std::stoi(req.matches[1]), body.value("enabled", true), error))
+        if (!streams->configureSender(std::stoi(req.matches[1]), body, error))
             return sendError(res, 400, error);
         sendJson(res, 200, { { "index", std::stoi(req.matches[1]) } });
     });

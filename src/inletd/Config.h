@@ -33,6 +33,7 @@ struct Config
     // NMOS and the API
     int apiPort = 8091;
     std::string label;               ///< empty: "Inlet (<host name>)"
+    std::string labelPrefix = "Net";   ///< receivers are "<prefix> In k", senders "<prefix> Out k"
     std::string registryUrl;
     std::string nodeId, deviceId;    ///< generated once, then kept
 

@@ -96,6 +96,9 @@ public:
     bool removeStream(const std::string& id);
     /** Plays a listed stream on a receiver. */
     bool subscribeToStream(int receiver, const std::string& streamId, std::string& error);
+    /** A sender's settings, any of: label, group, port, firstOutput, enabled.
+        Its stream goes and comes back with a new SDP when they change it. */
+    bool configureSender(int index, const nlohmann::json& body, std::string& error);
 
     /** The Inlet API's PUT /labels: { receivers: [{id, channels}], senders: [{id, channels}] },
         ids being NMOS receiver and sender ids (resolved by `receiverIdOf`/`senderIdOf`). */
@@ -126,6 +129,7 @@ private:
         mutable uint64_t seenPackets = 0;
         mutable int64_t seenMovingMono = 0;
         bool bridged = false;
+        bool timed = false;                        // the library times its arrivals on our clock
         std::unique_ptr<aes67_ring[]> staging;     // the bridge's input, when bridged
         std::unique_ptr<RateBridge> bridge;
         std::string error;
@@ -154,6 +158,7 @@ private:
 
     void run();
     bool sharesOurClock(const Receiver& r) const;
+    void timeArrivals();   // with lock held
     bool validateSdp(const std::string& text, aes67_sdp_t& out, std::string& error) const;
     bool openReceiver(Receiver& r, std::string& error);   // with lock held
     void closeReceiver(Receiver& r);

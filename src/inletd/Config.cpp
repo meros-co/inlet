@@ -29,7 +29,7 @@ nlohmann::json Config::settingsJson() const
              { "inputs", inputs }, { "outputs", outputs }, { "receivers", receivers },
              { "receiverChannels", receiverChannels }, { "senders", senders }, { "senderChannels", senderChannels },
              { "linkOffsetUs", linkOffsetUs }, { "apiPort", apiPort }, { "label", label },
-             { "registryUrl", registryUrl } };
+             { "labelPrefix", labelPrefix }, { "registryUrl", registryUrl } };
 }
 
 bool Config::applySettings(const nlohmann::json& j, std::string& error)
@@ -54,6 +54,7 @@ bool Config::applySettings(const nlohmann::json& j, std::string& error)
         next.linkOffsetUs = j.value("linkOffsetUs", next.linkOffsetUs);
         next.apiPort = j.value("apiPort", next.apiPort);
         next.label = j.value("label", next.label);
+        next.labelPrefix = j.value("labelPrefix", next.labelPrefix);
         next.registryUrl = j.value("registryUrl", next.registryUrl);
     }
     catch (const std::exception& e)
@@ -71,6 +72,9 @@ bool Config::applySettings(const nlohmann::json& j, std::string& error)
         error = "a stream carries 1 to 80 channels";
     else if (next.apiPort <= 0 || next.apiPort > 65535)
         error = "the API port is 1 to 65535";
+    else if (next.labelPrefix.empty() || next.labelPrefix.size() > 32
+             || next.labelPrefix.find_first_of("\r\n\t") != std::string::npos)
+        error = "the label prefix is 1 to 32 characters on one line";
     if (!error.empty())
         return false;
     *this = next;

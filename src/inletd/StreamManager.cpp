@@ -157,6 +157,33 @@ void StreamManager::changed()
 
 /* ---- receivers -------------------------------------------------------------------- */
 
+void StreamManager::timeArrivals()
+{
+    // The receive library times each packet against the stream's media clock
+    // on ours: set it again as the clocks drift. A stream on another clock
+    // has no time of ours. Late, for a stream played directly, is after the
+    // link offset (bridged streams have the bridge's margin besides).
+    ClockSample clk;
+    const bool known = region.clock().read(clk);
+    for (auto& r : rx)
+    {
+        if (!r.active || r.rxSlot < 0)
+            continue;
+        if (!known || !sharesOurClock(r) || r.sdp.sample_rate == 0)
+        {
+            if (r.timed)
+                aes67_netrx_set_media_clock(netRx, r.rxSlot, 0, 0, 0, 0);
+            r.timed = false;
+            continue;
+        }
+        const uint64_t at = aes67_netrx_now_ns();
+        const uint64_t media = sampleAt(clk.ptpAt(monoNowNs()), r.sdp.sample_rate);
+        const uint32_t lateAfter = r.bridge ? UINT32_MAX : region.header().linkOffsetFrames.load();
+        aes67_netrx_set_media_clock(netRx, r.rxSlot, at, media, r.sdp.sample_rate, lateAfter);
+        r.timed = true;
+    }
+}
+
 bool StreamManager::sharesOurClock(const Receiver& r) const
 {
     ClockSample clk;
@@ -274,6 +301,7 @@ void StreamManager::closeReceiver(Receiver& r)
     if (r.rxSlot >= 0)
         aes67_netrx_remove_stream(netRx, r.rxSlot);
     r.rxSlot = -1;
+    r.timed = false;
     r.bridge.reset();
     r.staging.reset();
     r.active = false;
@@ -474,6 +502,71 @@ bool StreamManager::setSenderEnabled(int index, bool enabled, std::string& error
             return false;
         if (!enabled)
             closeSender(s);
+    }
+    changed();
+    return true;
+}
+
+bool StreamManager::configureSender(int index, const nlohmann::json& body, std::string& error)
+{
+    if (!body.is_object())
+    {
+        error = "a sender's settings are an object";
+        return false;
+    }
+    {
+        std::lock_guard<std::mutex> g(lock);
+        if (index < 1 || index > (int) tx.size())
+        {
+            error = "no such sender";
+            return false;
+        }
+        Sender& s = tx[(size_t) index - 1];
+        Sender next = s;
+        error.clear();
+        try
+        {
+            next.label = body.value("label", next.label);
+            next.group = body.value("group", next.group);
+            const int port = body.value("port", (int) next.port);
+            if (port < 1 || port > 65535)
+            {
+                error = "the port is 1 to 65535";
+                return false;
+            }
+            next.port = (uint16_t) port;
+            next.firstOutput = body.value("firstOutput", next.firstOutput);
+            next.enabled = body.value("enabled", next.enabled);
+        }
+        catch (const std::exception& e)
+        {
+            error = std::string("a sender setting has the wrong type: ") + e.what();
+            return false;
+        }
+        uint32_t group = 0;   // network order: its first byte says multicast (224-239)
+        if (next.label.empty() || next.label.size() > 64 || next.label.find_first_of("\r\n") != std::string::npos)
+            error = "a sender's label is 1 to 64 characters on one line";
+        else if (!aes67_parse_ipv4(next.group.c_str(), &group) || (reinterpret_cast<const uint8_t*>(&group)[0] & 0xF0) != 0xE0)
+            error = "a sender's group is a multicast IPv4 address";
+        else if (next.firstOutput < 0 || next.firstOutput + next.channels > (int) region.header().outputs)
+            error = "outputs " + std::to_string(next.firstOutput + 1) + " to " + std::to_string(next.firstOutput + next.channels)
+                    + " are not all the device's";
+        else
+            for (auto& o : tx)
+                if (o.index != index && o.group == next.group && o.port == next.port)
+                    error = "sender " + std::to_string(o.index) + " has that group and port";
+        if (!error.empty())
+            return false;
+        // Anything but turning it on or off changes the stream: it goes and
+        // comes back with the new SDP (SAP and NMOS hear).
+        const bool reopen = next.label != s.label || next.group != s.group || next.port != s.port
+                            || next.firstOutput != s.firstOutput;
+        if (s.txSlot >= 0 && (reopen || !next.enabled))
+            closeSender(s);
+        next.txSlot = s.txSlot;
+        s = next;
+        if (s.enabled && s.txSlot < 0 && !openSender(s, error))
+            return false;
     }
     changed();
     return true;
@@ -747,8 +840,8 @@ nlohmann::json StreamManager::receiversJson() const
         nlohmann::json j = { { "index", r.index }, { "label", r.label }, { "active", r.active }, { "error", r.error } };
         // The health fields a console publishes for its own receivers, always
         // present; zeros while idle.
-        nlohmann::json health = { { "receiving", false }, { "packets", 0 }, { "lost", 0 }, { "reordered", 0 },
-                                  { "wrongPayload", 0 }, { "jitterWorstNs", 0 }, { "resyncs", 0 }, { "underruns", 0 },
+        nlohmann::json health = { { "receiving", false }, { "packets", 0 }, { "lost", 0 }, { "late", 0 },
+                                  { "reordered", 0 }, { "wrongPayload", 0 }, { "jitterWorstNs", 0 }, { "resyncs", 0 }, { "underruns", 0 },
                                   { "latencyFrames", region.header().linkOffsetFrames.load() }, { "bridged", false } };
         if (r.active)
         {
@@ -769,6 +862,25 @@ nlohmann::json StreamManager::receiversJson() const
             health["reordered"] = st.reordered;
             health["wrongPayload"] = st.wrong_pt;
             health["jitterWorstNs"] = st.jitter_worst_ns;
+            health["late"] = st.late;
+            if (st.last_arrival_ns != 0)
+            {
+                // When the last packet came: how long ago, and when on the
+                // PTP clock (the library stamps arrivals on its own clock).
+                const int64_t ago = (int64_t) (aes67_netrx_now_ns() - st.last_arrival_ns);
+                health["lastPacketAgoMs"] = ago / 1'000'000;
+                ClockSample clk;
+                if (region.clock().read(clk))
+                    health["lastPacketPtpNs"] = clk.ptpAt(monoNowNs() - ago);
+            }
+            if (st.timed && r.sdp.sample_rate != 0)
+            {
+                // How long after its media-clock time each packet arrived, on
+                // PTP time: the sender's offset and the network's delay.
+                const auto us = [&](int64_t frames) { return frames * 1'000'000 / (int64_t) r.sdp.sample_rate; };
+                health["ptpOffsetUs"] = { { "last", us(st.offset_last) }, { "min", us(st.offset_min) },
+                                          { "max", us(st.offset_max) } };
+            }
             health["bridged"] = r.bridged;
             if (r.bridge)
             {
@@ -796,6 +908,8 @@ nlohmann::json StreamManager::sendersJson() const
         nlohmann::json j = { { "index", s.index }, { "label", s.label }, { "channels", s.channels },
                              { "firstOutput", s.firstOutput }, { "group", s.group }, { "port", s.port },
                              { "ptimeUs", s.ptimeUs }, { "enabled", s.enabled } };
+        if (s.txSlot >= 0)
+            j["sdp"] = makeSdp(s);
         // Sender health: on the wire or not, and packets sent (silent ones
         // included: no host was writing). Open but not sending (every send
         // failing, as on a saturated Wi-Fi link) is not "sending".
@@ -832,7 +946,8 @@ nlohmann::json StreamManager::persistentState() const
             j["receivers"].push_back({ { "index", r.index }, { "sdp", r.sdpText }, { "senderId", r.senderId }, { "streamId", r.streamId } });
     j["senders"] = nlohmann::json::array();
     for (auto& s : tx)
-        j["senders"].push_back({ { "index", s.index }, { "enabled", s.enabled } });
+        j["senders"].push_back({ { "index", s.index }, { "enabled", s.enabled }, { "label", s.label }, { "group", s.group },
+                                 { "port", s.port }, { "firstOutput", s.firstOutput } });
     j["inputMap"] = nlohmann::json::array();
     for (uint32_t i = 0; i < region.header().inputs; ++i)
         j["inputMap"].push_back(region.inputMap()[i].load());
@@ -857,7 +972,10 @@ void StreamManager::restoreState(const nlohmann::json& j)
     for (auto& s : j.value("senders", nlohmann::json::array()))
     {
         std::string error;
-        setSenderEnabled(s.value("index", 0), s.value("enabled", true), error);
+        nlohmann::json settings = s;
+        settings.erase("index");
+        if (!configureSender(s.value("index", 0), settings, error))
+            std::fprintf(stderr, "inletd: sender %d's saved settings: %s\n", s.value("index", 0), error.c_str());
     }
     for (auto& sdp : j.value("manualStreams", nlohmann::json::array()))
         if (sdp.is_string())
@@ -918,9 +1036,10 @@ void StreamManager::reevaluateClocks()
 
 void StreamManager::run()
 {
-    int64_t lastSlowMs = 0;
+    int64_t lastSlowMs = 0, lastTimingMs = 0;
     while (running.load())
     {
+        const int64_t now = wallMs();
         bool anyBridge = false;
         {
             std::lock_guard<std::mutex> g(lock);
@@ -935,8 +1054,12 @@ void StreamManager::run()
                         anyBridge = true;
                     }
             }
+            if (now - lastTimingMs >= 100)
+            {
+                lastTimingMs = now;
+                timeArrivals();
+            }
         }
-        const int64_t now = wallMs();
         if (now - lastSlowMs >= 1000)
         {
             lastSlowMs = now;
