@@ -23,7 +23,7 @@ set(BUILD_TESTING ${_inlet_build_testing})
 # make position-independent code by default (Rocky Linux 9's) need it.
 set_target_properties(samplerate PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-# nlohmann/json 3.11.3 (MIT): the control plane's JSON, as in Manifold.
+# nlohmann/json 3.11.3 (MIT): the control plane's JSON.
 FetchContent_Declare(nlohmann_json
     GIT_REPOSITORY https://github.com/nlohmann/json.git
     GIT_TAG 9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03)

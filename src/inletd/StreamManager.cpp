@@ -745,8 +745,8 @@ nlohmann::json StreamManager::receiversJson() const
     for (auto& r : rx)
     {
         nlohmann::json j = { { "index", r.index }, { "label", r.label }, { "active", r.active }, { "error", r.error } };
-        // The health fields Manifold publishes for its own receivers (the
-        // "Manifold <-> Inlet" spec), always present; zeros while idle.
+        // The health fields a console publishes for its own receivers, always
+        // present; zeros while idle.
         nlohmann::json health = { { "receiving", false }, { "packets", 0 }, { "lost", 0 }, { "reordered", 0 },
                                   { "wrongPayload", 0 }, { "jitterWorstNs", 0 }, { "resyncs", 0 }, { "underruns", 0 },
                                   { "latencyFrames", region.header().linkOffsetFrames.load() }, { "bridged", false } };

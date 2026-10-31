@@ -6,13 +6,13 @@
  * Inlet as an NMOS node: IS-04 (node API, registration), IS-05 (connection
  * management) and IS-08 (channel mapping).
  *
- * Ported from Manifold's NmosNode (proven end to end against Sluice), off JUCE
- * and onto the NodeModel interface. What a controller needs from a device is
+ * Ported from a console's NmosNode (proven end to end against an NMOS
+ * controller), off JUCE and onto the NodeModel interface. What a controller needs from a device is
  * this surface and no more: a DNS-SD advert (`_nmos-node._tcp`), the IS-04
  * node API with an SDP manifest for every sender, the IS-05 connection API,
  * and registration with an IS-04 registry when one is on the network. With no
- * registry the node still answers peer-to-peer, which is how the free Sluice
- * and a Manifold console find it.
+ * registry the node still answers peer-to-peer, which is how controllers and
+ * consoles without one find it.
  *
  * Identity: every resource's id is stable across restarts, derived from the
  * stored node and device ids, because a controller correlates by id.

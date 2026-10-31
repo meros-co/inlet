@@ -37,7 +37,7 @@ int64_t wallNs()
 }
 
 /** linuxptp's way of writing a clock identity ("001b19.fffe.000001"), which
-    is what Manifold's ptp_update carries and compares. */
+    is what a console's ptp_update carries and compares. */
 std::string pmcIdentity(const uint8_t b[8])
 {
     char s[24];
@@ -371,7 +371,7 @@ void Engine::Impl::persist()
 
 nlohmann::json Engine::Impl::ptpJson() const
 {
-    // The shape of Manifold's ptp_update without its `type` key, so a console
+    // The shape of a console's ptp_update without its `type` key, so a console
     // reads it as its own.
     ClockSample s;
     region->clock().read(s);

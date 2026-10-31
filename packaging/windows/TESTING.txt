@@ -3,8 +3,8 @@ Inlet test build for Windows (unsigned)
 
 What this is: an AES67 virtual sound card. Your DAW sees an ASIO device called
 "Inlet"; its inputs are AES67 streams from the network and its outputs are sent
-to the network as AES67 streams. A Manifold console (or any NMOS controller,
-such as Sluice) can find and route it.
+to the network as AES67 streams. A console or any NMOS controller can find and
+route it.
 
 Needs: Windows 10 22H2 or Windows 11, x64, a WIRED network interface on the
 AES67 network (Wi-Fi cannot carry the streams), and an ASIO host (REAPER,
@@ -33,7 +33,7 @@ Check
 
 Receive (network -> DAW)
 ------------------------
-- From a console or Sluice: route a sender to an Inlet receiver ("Net In 1" ...).
+- From a console or an NMOS controller: route a sender to an Inlet receiver ("Net In 1" ...).
   Net In k's channels are DAW inputs (k-1)*8+1 ... k*8 by default.
 - Or in the Inlet app, Receivers page: pick a stream (heard by SAP or NMOS, or
   pasted with "Add an SDP..."), select a receiver, "Play on this receiver".
@@ -41,7 +41,7 @@ Receive (network -> DAW)
 Send (DAW -> network)
 ---------------------
 - DAW outputs 1-8 go out as "Net Out 1", 9-16 as "Net Out 2", and so on,
-  announced by SAP and NMOS. Route them from the console or Sluice.
+  announced by SAP and NMOS. Route them from a console or an NMOS controller.
 - Several programs may play out through Inlet at once (up to eight): their
   outputs are mixed. The Status page says which programs send their outputs.
 

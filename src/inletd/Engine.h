@@ -8,7 +8,7 @@
  * the stream manager, the NMOS node and the HTTP server that carries NMOS and
  * the Inlet API.
  *
- * The Inlet API (`/inlet/v1`, the vault spec "Manifold <-> Inlet"):
+ * The Inlet API (`/inlet/v1`):
  *   GET  /inlet/v1/status                 host, OS, drivers, rate, PTP, health
  *   PUT  /inlet/v1/labels                 channel names, from a console
  *   POST /inlet/v1/profiles/{multitrack|playback}
