@@ -128,7 +128,8 @@ jobs:
 
       - name: Build, test and package
         run: |
-          docker run --rm --user root -e PACKAGE=${{ matrix.package }} -v "$PWD:/src" -w /src inlet-build:${{ matrix.distro }} bash -c '
+          # Docker's /dev/shm is 64 MB; the tests hold several of inletd's shared regions at once.
+          docker run --rm --user root --shm-size=1g -e PACKAGE=${{ matrix.package }} -v "$PWD:/src" -w /src inlet-build:${{ matrix.distro }} bash -c '
             set -e
             git config --global --add safe.directory "*"
             cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
