@@ -59,6 +59,7 @@ namespace
 constexpr int64_t kReattachEveryNs = 500'000'000;
 constexpr uint32_t kDefaultQuantum = 256;
 constexpr uint32_t kMaxQuantum = 8192;
+static_assert(kMaxQuantum <= inlet::shm::kMaxPeriodFrames, "the rings hold a whole quantum beside the link offset");
 
 pw_main_loop* gLoop = nullptr;
 

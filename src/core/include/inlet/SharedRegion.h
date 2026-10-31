@@ -53,7 +53,10 @@ namespace shm
 {
 
 constexpr uint32_t kMagic = 0x544C4E49;   // "INLT"
-constexpr uint32_t kLayoutVersion = 2;
+constexpr uint32_t kLayoutVersion = 3;   // 3: rings of 16384 frames
+/** The longest period a client reads at once: PipeWire's largest quantum,
+    and the ALSA plugin's largest period. */
+constexpr uint32_t kMaxPeriodFrames = 8192;
 constexpr int kMaxClients = 16;
 /** How many hosts' outputs are mixed at once; a host past these plays inputs only. */
 constexpr int kOutputLayers = 8;

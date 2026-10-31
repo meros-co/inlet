@@ -3,6 +3,10 @@
 
 #include "Config.h"
 
+#include "inlet/SharedRegion.h"
+
+#include <aes67/rtp.h>
+
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -77,6 +81,9 @@ bool Config::applySettings(const nlohmann::json& j, std::string& error)
     else if (next.labelPrefix.empty() || next.labelPrefix.size() > 32
              || next.labelPrefix.find_first_of("\r\n\t") != std::string::npos)
         error = "the label prefix is 1 to 32 characters on one line";
+    else if (next.linkOffsetFrames() > maxLinkOffsetFrames())
+        error = "the link offset is at most " + std::to_string((uint64_t) maxLinkOffsetFrames() * 1000 / next.sampleRate)
+              + " ms at " + std::to_string(next.sampleRate) + " Hz";
     if (!error.empty())
         return false;
     *this = next;
@@ -92,6 +99,15 @@ uint32_t Config::linkOffsetFrames() const
     // milliseconds; 3 ms, with real-time network threads, ran clean).
     const uint32_t us = linkOffsetUs ? linkOffsetUs : 3000;
     return (uint32_t) ((uint64_t) us * sampleRate / 1000000u);
+}
+
+uint32_t Config::maxLinkOffsetFrames()
+{
+    // A client reads a period that ends the link offset behind the newest
+    // packet, so the ring holds both, and a few packets' margin (the newest
+    // packet itself is still on its way).
+    static_assert(AES67_RING_FRAMES >= 2 * shm::kMaxPeriodFrames, "the rings hold the largest period and as long an offset");
+    return AES67_RING_FRAMES - shm::kMaxPeriodFrames - 256;
 }
 
 bool Config::load(const std::string& path, std::string& error)

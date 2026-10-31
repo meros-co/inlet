@@ -24,7 +24,11 @@ include(CTest)
 include(cmake/Dependencies.cmake)
 
 # The shared AES67 and mDNS libraries (meros-co/aes67), a git submodule:
-# `git submodule update --init`. Targets meros::aes67 and meros::mdns.
+# `git submodule update --init`. Targets meros::aes67 and meros::mdns. The
+# playout rings hold 16384 frames (341 ms at 48 kHz): a client reads a whole
+# period of up to 8192 frames (shm::kMaxPeriodFrames) the link offset behind
+# the network, and both must fit.
+set(MEROS_AES67_RING_FRAMES 16384 CACHE STRING "Frames per playout ring" FORCE)
 add_subdirectory(third_party/meros-aes67)
 
 add_subdirectory(src/core)

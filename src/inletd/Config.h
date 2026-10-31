@@ -49,6 +49,9 @@ struct Config
     bool applySettings(const nlohmann::json& j, std::string& error);
 
     uint32_t linkOffsetFrames() const;
+    /** The longest link offset the rings hold beside a client's largest
+        period, at any rate. */
+    static uint32_t maxLinkOffsetFrames();
 };
 
 } // namespace inlet

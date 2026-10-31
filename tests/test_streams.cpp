@@ -277,6 +277,34 @@ static void settings()
     CHECK(!c.nmos && c.settingsJson()["nmos"] == false);
     CHECK(!c.applySettings(nlohmann::json::parse(R"({"nmos": "off"})"), err));
     CHECK(!c.nmos);
+
+    // The rings hold the link offset beside a client's largest period: 60 ms
+    // fits at 48 kHz, 165 ms is the most, and a rate that doubles its frames
+    // is refused.
+    CHECK(c.applySettings(nlohmann::json::parse(R"({"linkOffsetUs": 60000})"), err));
+    CHECK(c.linkOffsetFrames() == 2880);
+    CHECK(!c.applySettings(nlohmann::json::parse(R"({"linkOffsetUs": 166000})"), err));
+    CHECK(err == "the link offset is at most 165 ms at 48000 Hz");
+    CHECK(c.applySettings(nlohmann::json::parse(R"({"linkOffsetUs": 165000})"), err));
+    CHECK(!c.applySettings(nlohmann::json::parse(R"({"sampleRate": 96000})"), err));
+    CHECK(c.sampleRate == 48000 && c.linkOffsetUs == 165000);
+}
+
+void ringsHoldTheLongestOffset()
+{
+    // A client at the longest link offset reads its largest period whole from
+    // a ring as Inlet builds it, with the newest packet still on its way.
+    static aes67_ring_t ring;
+    aes67_ring_init(&ring);
+    const uint32_t head = 100000;
+    for (uint32_t t = head - AES67_RING_FRAMES - 100; t < head; ++t)
+        aes67_ring_write(&ring, t, (int32_t) t);
+    const uint32_t from = head - 256 - Config::maxLinkOffsetFrames() - shm::kMaxPeriodFrames;
+    std::vector<int32_t> out(shm::kMaxPeriodFrames);
+    CHECK(aes67_ring_read(&ring, from, out.data(), (int) out.size()) == (int) out.size());
+    CHECK(out.front() == (int32_t) from && out.back() == (int32_t) (from + shm::kMaxPeriodFrames - 1));
+    // 60 ms behind with a 2400-frame period, as a recorder reads, fits too.
+    CHECK(aes67_ring_read(&ring, head - 2880 - 2400, out.data(), 2400) == 2400);
 }
 
 int main()
@@ -284,5 +312,6 @@ int main()
     sap();
     streams();
     settings();
+    ringsHoldTheLongestOffset();
     TEST_MAIN_END();
 }

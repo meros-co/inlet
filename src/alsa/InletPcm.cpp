@@ -251,6 +251,11 @@ int pcmHwParams(snd_pcm_ioplug_t* io, snd_pcm_hw_params_t*)
 {
     InletPcm* p = self(io);
     DeviceClient* c = p->cur();
+    // A period read at once, in the device's frames (more of them when the
+    // program's rate is lower), must fit the rings beside the link offset:
+    // 16-bit samples or a converted rate can ask for more than that.
+    if ((uint64_t) io->period_size * c->sampleRate() > (uint64_t) shm::kMaxPeriodFrames * io->rate)
+        return -EINVAL;
     if (p->engine)
         p->engine->stop();
     std::vector<int> channels;
