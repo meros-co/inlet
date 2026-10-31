@@ -8,17 +8,17 @@ network as AES67 streams. A console or any NMOS controller can find and route
 it.
 
 Needs: Ubuntu 22.04 or later, Debian 12 or later, Fedora (the current two
-releases), RHEL, Rocky or Alma Linux 9 or later, or Arch Linux, on x86-64 or
-64-bit ARM; systemd; a wired network interface on the AES67 network (Inlet
+releases), RHEL, Rocky or Alma Linux 9 or later, or Arch Linux, on x86-64;
+systemd; a wired network interface on the AES67 network (Inlet
 warns on Wi-Fi, which carries the streams poorly); linuxptp (installed with
 Inlet). A PTP grandmaster on the network for clock lock; without one, Inlet
 runs on the computer's own clock and says so.
 
 Install
 -------
-- Debian, Ubuntu:        sudo apt install ./inlet_0.1.0_amd64.deb   (or _arm64)
+- Debian, Ubuntu:        sudo apt install ./inlet_0.1.0_amd64.deb
 - Fedora, RHEL, Rocky,
-  Alma:                  sudo dnf install ./inlet-0.1.0-1.x86_64.rpm (or .aarch64)
+  Alma:                  sudo dnf install ./inlet-0.1.0-1.x86_64.rpm
 - Arch Linux:            in packaging/linux/arch, makepkg -si
 
 The service (inletd) starts at once and at every boot. Inlet in PipeWire
