@@ -139,7 +139,9 @@ struct FakeDaemon
             while (alive)
             {
                 region->header().daemonHeartbeatMono.store(monoNowNs());
-                const uint64_t now = sampleAt(clock.ptpAt(monoNowNs()), 48000);
+                // Written 100 ms ahead: the rings are timestamp-indexed, and a
+                // 1 ms sleep can take 15 ms on Windows, far past the link offset.
+                const uint64_t now = sampleAt(clock.ptpAt(monoNowNs()), 48000) + 4800;
                 for (; written < now; ++written)
                     aes67_ring_write(region->rxRings(1), (uint32_t) written, (int32_t) ((written - base) & 0x7FFFF));
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
