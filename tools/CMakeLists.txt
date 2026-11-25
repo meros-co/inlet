@@ -4,12 +4,14 @@
 if(TARGET inlet_ptp)
     add_executable(inlet-ptp-probe ptp_probe.cpp)
     target_link_libraries(inlet-ptp-probe PRIVATE inlet_ptp)
+    inlet_version_resource(inlet-ptp-probe "Inlet PTP probe")
 endif()
 
 if(WIN32)
     add_executable(inlet-asio-loopback asio_loopback.cpp)
     target_include_directories(inlet-asio-loopback PRIVATE ${PROJECT_SOURCE_DIR}/third_party/asiosdk/common)
     target_link_libraries(inlet-asio-loopback PRIVATE ole32)
+    inlet_version_resource(inlet-asio-loopback "Inlet ASIO loopback test")
 endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

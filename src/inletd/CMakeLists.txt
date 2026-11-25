@@ -15,6 +15,7 @@ add_library(inletd_lib STATIC
     StreamManager.cpp
 )
 target_include_directories(inletd_lib PUBLIC .)
+target_compile_definitions(inletd_lib PUBLIC INLET_VERSION="${PROJECT_VERSION}")
 target_link_libraries(inletd_lib PUBLIC inlet_core meros::mdns nlohmann_json::nlohmann_json httplib::httplib)
 if(TARGET inlet_ptp)
     target_link_libraries(inletd_lib PUBLIC inlet_ptp)
@@ -26,6 +27,7 @@ if(WIN32)
 endif()
 
 add_executable(inletd main.cpp)
+inlet_version_resource(inletd "Inlet service")
 target_link_libraries(inletd PRIVATE inletd_lib)
 if(NOT WIN32)
     install(TARGETS inletd RUNTIME DESTINATION bin COMPONENT inlet)

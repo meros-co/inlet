@@ -7,6 +7,7 @@
 // service, macOS as a launchd daemon; `--console` runs it in a terminal.
 //
 //   inletd [--console] [--config PATH]
+//   inletd --version
 //   inletd --install-service | --uninstall-service      (Windows, as administrator)
 //
 // On macOS launchd also listens on a socket for it (co.meros.inletd.plist):
@@ -291,6 +292,11 @@ int main(int argc, char** argv)
             console = true;
         else if (!std::strcmp(argv[i], "--config") && i + 1 < argc)
             configPath = argv[++i];
+        else if (!std::strcmp(argv[i], "--version"))
+        {
+            std::printf("inletd %s\n", INLET_VERSION);
+            return 0;
+        }
 #if defined(_WIN32)
         else if (!std::strcmp(argv[i], "--install-service"))
             return installService(true);
@@ -299,7 +305,7 @@ int main(int argc, char** argv)
 #endif
         else
         {
-            std::fprintf(stderr, "usage: %s [--console] [--config PATH]\n", argv[0]);
+            std::fprintf(stderr, "usage: %s [--console] [--config PATH] [--version]\n", argv[0]);
             return 2;
         }
     }

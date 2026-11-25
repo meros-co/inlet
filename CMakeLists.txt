@@ -22,6 +22,7 @@ option(INLET_BUILD_APP "Build the Inlet app (JUCE)" ON)
 
 include(CTest)
 include(cmake/Dependencies.cmake)
+include(cmake/VersionResource.cmake)
 
 # The shared AES67 and mDNS libraries (meros-co/aes67), a git submodule:
 # `git submodule update --init`. Targets meros::aes67 and meros::mdns. The

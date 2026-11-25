@@ -28,7 +28,7 @@ namespace inlet
 namespace
 {
 
-constexpr const char* kVersion = "0.1.0";
+constexpr const char* kVersion = INLET_VERSION;
 constexpr const char* kServiceType = "urn:x-manifold:service:inlet/v1";
 
 int64_t wallNs()
