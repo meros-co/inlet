@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 Meros Inc.
+#
+# A release: pushing the tag vMAJOR.MINOR.PATCH (the version tools/set-version.py
+# set) builds, tests, signs and notarizes every package (build.yml) and creates
+# a draft GitHub Release with them and their SHA-256 sums. A maintainer reviews
+# the draft and publishes it. See RELEASING.md.
+#
+# Run by hand on a branch instead, it does all of that but the release: a dry
+# run of the signing, with the signed packages as the run's artifacts.
+
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Check the version
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: version
+        name: The tag and the source agree
+        run: |
+          version=$(python3 tools/set-version.py)
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            python3 tools/set-version.py --check "${{ github.ref_name }}"
+          else
+            python3 tools/set-version.py --check "$version"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: version
+    uses: ./.github/workflows/build.yml
+    with:
+      release: true
+    secrets: inherit
+
+  publish:
+    name: Draft the release
+    if: github.ref_type == 'tag'
+    needs: [version, build]
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.version.outputs.version }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: release
+        run: |
+          ls -l
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create the draft release
+        run: |
+          sed "s/@VERSION@/$VERSION/g" .github/release-notes.md > "$RUNNER_TEMP/notes.md"
+          prerelease=""
+          case "$VERSION" in 0.*) prerelease="--prerelease" ;; esac
+          gh release create "$TAG" release/* --draft --verify-tag $prerelease \
+            --title "Inlet $VERSION" --notes-file "$RUNNER_TEMP/notes.md" --generate-notes
+          echo "Drafted: $(gh release view "$TAG" --json url --jq .url)"
