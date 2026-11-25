@@ -1,5 +1,5 @@
-Inlet test build for Windows (unsigned)
-=======================================
+Inlet for Windows
+=================
 
 What this is: an AES67 virtual sound card. Your DAW sees an ASIO device called
 "Inlet"; its inputs are AES67 streams from the network and its outputs are sent
@@ -8,20 +8,22 @@ route it.
 
 Needs: Windows 10 22H2 or Windows 11, x64, a WIRED network interface on the
 AES67 network (Inlet warns on Wi-Fi, which carries the streams poorly), and an
-ASIO host (REAPER,
-Cubase, Studio One, ...). A PTP grandmaster on the network for clock lock;
-without one, Inlet runs on the computer's own clock and says so.
+ASIO host (REAPER, Cubase, Studio One, ...). A PTP grandmaster on the network
+for clock lock; without one, Inlet runs on the computer's own clock and says so.
 
 Install
 -------
-1. Unzip the folder anywhere.
-2. Double-click install.cmd and accept the administrator prompt. (Windows
-   SmartScreen may warn that the files are unsigned: "More info" -> "Run anyway".)
-3. The Inlet app opens. Its tray icon (the Inlet mark) has a green dot when PTP
-   is locked, amber when free-running, grey when Inlet is stopped.
-   Installing over an earlier build is fine (settings are kept), and is needed
-   once for the app's "Start Inlet" button to work: earlier builds did not let
-   a signed-in user start the service.
+1. Run Inlet-<version>-windows-x64-setup.exe and accept the administrator
+   prompt. (A build made without signing makes SmartScreen warn: "More info" ->
+   "Run anyway".)
+2. The Inlet app opens at the end. Its tray icon (the Inlet mark) has a green
+   dot when PTP is locked, amber when free-running, grey when Inlet is stopped.
+   Installing over an earlier Inlet is fine: its settings are kept, and the
+   installer stops it first.
+3. On many computers at once, unattended:
+     Inlet-<version>-windows-x64-setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+   It exits with 0 when Inlet is installed and its service started, and with 8
+   when the files are in place but setting Inlet up failed.
 
 Check
 -----
@@ -101,10 +103,10 @@ Where things are
 
 Uninstall
 ---------
-Double-click uninstall.cmd in C:\Program Files\Inlet (or in this folder).
+Settings > Apps > Installed apps > Inlet > Uninstall. Unattended:
+  "C:\Program Files\Inlet\unins000.exe" /VERYSILENT
 
-Known limits of this build
---------------------------
+Known limits
+------------
 - Up to eight programs play out at once; a ninth plays Inlet's inputs only.
 - 32-sample ASIO buffers may click; 64 and above are recommended.
-- macOS is not in this build.
