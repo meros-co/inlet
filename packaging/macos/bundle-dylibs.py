@@ -107,7 +107,33 @@ def main():
             subprocess.run(args + [path], check=True, capture_output=True)
     for path in list(copied.values()) + programs:
         sign(path)
+    verify(libdir, prefix, programs, list(copied.values()))
     print(f"bundled {len(copied)} libraries into {libdir}")
+
+
+def verify(libdir, prefix, programs, copies):
+    """Everything links only macOS's own libraries and the copies, and holds
+    every architecture the build asked for (ARCHS): a Mac without GStreamer
+    can run it, whichever processor it has."""
+    wanted = set(os.environ.get("ARCHS", "").replace(";", " ").split())
+    problems = []
+    for path in programs + copies:
+        for name in linked(path):
+            if system(name):
+                continue
+            base = os.path.basename(name)
+            ok = os.path.exists(os.path.join(libdir, base)) and name in (
+                f"@executable_path/{prefix}/{base}", f"@loader_path/{base}")
+            own_id = path in copies and name == "@rpath/" + os.path.basename(path)
+            if not ok and not own_id:
+                problems.append(f"{os.path.basename(path)} links {name}")
+        if wanted:
+            out = subprocess.run(["lipo", "-archs", path], check=True, capture_output=True, text=True).stdout
+            missing = wanted - set(out.split())
+            if missing:
+                problems.append(f"{os.path.basename(path)} lacks {' '.join(sorted(missing))}")
+    if problems:
+        sys.exit("not self-contained:\n  " + "\n  ".join(problems))
 
 
 if __name__ == "__main__":

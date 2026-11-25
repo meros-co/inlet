@@ -23,6 +23,9 @@
 #   ARCHS                 CMAKE_OSX_ARCHITECTURES (default: this Mac's)
 #   CODESIGN_IDENTITY     a "Developer ID Application" identity (default: ad hoc)
 #   INSTALLER_IDENTITY    a "Developer ID Installer" identity to sign the package
+#   NOTARY_KEY_PATH       an App Store Connect API key (.p8), with NOTARY_KEY_ID
+#   NOTARY_KEY_ID         and NOTARY_ISSUER: the package is notarized and the
+#   NOTARY_ISSUER         ticket stapled to it (needs both identities)
 #   BUILD_DIR             default: build-release
 
 set -eu
@@ -101,4 +104,24 @@ if [ -n "${INSTALLER_IDENTITY:-}" ]; then
     set -- "$@" --sign "$INSTALLER_IDENTITY"
 fi
 COPYFILE_DISABLE=1 pkgbuild "$@" "$pkg"
+
+# Notarized, and the ticket stapled, so Gatekeeper opens it offline too.
+if [ -n "${NOTARY_KEY_PATH:-}" ]; then
+    if [ "$identity" = "-" ] || [ -z "${INSTALLER_IDENTITY:-}" ]; then
+        echo "notarizing needs CODESIGN_IDENTITY and INSTALLER_IDENTITY" >&2
+        exit 1
+    fi
+    xcrun notarytool submit "$pkg" --key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" \
+        --wait --timeout 1h --output-format json > "$stage/notary.json" || true
+    field() { python3 -c 'import json, sys; print(json.load(open(sys.argv[1])).get(sys.argv[2], ""))' "$stage/notary.json" "$1"; }
+    status=$(field status)
+    if [ "$status" != "Accepted" ]; then
+        id=$(field id)
+        echo "notarization: $status" >&2
+        [ -n "$id" ] && xcrun notarytool log "$id" --key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" >&2
+        exit 1
+    fi
+    xcrun stapler staple "$pkg"
+    xcrun stapler validate "$pkg"
+fi
 echo "Package: $pkg"
