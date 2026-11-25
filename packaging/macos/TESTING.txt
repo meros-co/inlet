@@ -1,19 +1,20 @@
-Inlet test build for macOS (unsigned)
-=====================================
+Inlet for macOS
+===============
 
 What this is: an AES67 virtual sound card. Every application on the Mac sees
 an audio device called "Inlet"; its inputs are AES67 streams from the network
-and its outputs are sent to the network as AES67 streams. A Manifold console
-(or any NMOS controller, such as Sluice) can find and route it.
+and its outputs are sent to the network as AES67 streams. A console or any
+NMOS controller can find and route it.
 
-Needs: macOS 13 or later, a WIRED network interface on the AES67 network
-(Wi-Fi cannot carry the streams), and a PTP grandmaster on the network for
+Needs: macOS 13 or later (Apple silicon or Intel), a WIRED network interface
+on the AES67 network (Inlet does not send on Wi-Fi unless you choose it), and a PTP grandmaster on the network for
 clock lock; without one, Inlet runs on the computer's own clock and says so.
 
 Install
 -------
-1. Open Inlet-<version>-macos.pkg. The build is not notarised: if macOS
-   refuses to open it, Control-click it, choose Open, and confirm.
+1. Open Inlet-<version>-macos.pkg. (A build made without a Developer ID is
+   not notarized: if macOS refuses to open it, Control-click it, choose Open,
+   and confirm.)
 2. Follow the installer (it asks for an administrator's password). It
    restarts Core Audio, so any audio playing stops for a moment.
 3. The Inlet app opens. Its menu-bar icon (the Inlet mark) has a dot when
@@ -36,7 +37,7 @@ Check
 
 Receive (network -> Mac)
 ------------------------
-- From a console or Sluice: route a sender to an Inlet receiver ("Net In 1" ...).
+- From a console or an NMOS controller: route a sender to an Inlet receiver ("Net In 1" ...).
   Net In k's channels are Inlet inputs (k-1)*8+1 ... k*8 by default.
 - Or in the Inlet app, Receivers page: pick a stream (heard by SAP or NMOS, or
   pasted with "Add an SDP..."), select a receiver, "Play on this receiver".
@@ -44,7 +45,7 @@ Receive (network -> Mac)
 Send (Mac -> network)
 ---------------------
 - Inlet outputs 1-8 go out as "Net Out 1", 9-16 as "Net Out 2", and so on,
-  announced by SAP and NMOS. Route them from the console or Sluice.
+  announced by SAP and NMOS. Route them from a console or an NMOS controller.
 - Several applications may play through Inlet at once: Core Audio mixes them.
 
 Sample rates
@@ -94,11 +95,7 @@ In Terminal:
   sudo "/Library/Application Support/Inlet/uninstall.sh"
 (add --purge to remove the settings and the log too).
 
-Known limits of this build
---------------------------
-- Not signed or notarised.
-- Built with Homebrew's GStreamer: runs on Apple silicon Macs with the macOS
-  version it was built on or later. A universal build needs the official
-  GStreamer framework.
+Known limits
+------------
 - Up to eight ASIO hosts and the Mac's applications (together, as one) play
   out at once.
