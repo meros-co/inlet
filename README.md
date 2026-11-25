@@ -18,8 +18,14 @@ and receives AES67 audio as if the network were a local audio interface.
 
 <img src="third_party/asiosdk/logo/ASIO-compatible-logo-Steinberg-TM-BW.png" alt="ASIO Compatible" width="120"/>
 
-Inlet is in early development. Test builds are available; they are unsigned and not yet ready
-for production use.
+Inlet is in early development and not yet ready for production use.
+
+## Download
+
+Signed installers and packages for every platform are on the
+[Releases](https://github.com/meros-co/inlet/releases) page: a setup program for Windows, a
+notarized package for macOS, and .deb, .rpm and Arch packages for Linux. Each lists its files'
+SHA-256 sums.
 
 ## How it fits together
 
@@ -54,11 +60,12 @@ ctest --test-dir build
 ```
 
 - **Windows:** Visual Studio 2022 or later with C++, and GStreamer 1.24 or later (the MSVC x86_64
-  runtime and development files). `packaging/windows/build-package.ps1` makes the test package
-  (a zip with install scripts); see `packaging/windows/TESTING.txt`.
-- **macOS:** Xcode's command-line tools and GStreamer 1.24 or later (`brew install gstreamer`).
-  `packaging/macos/build-package.sh` makes the installer package (the app, the Core Audio driver,
-  inletd as a launchd daemon); see `packaging/macos/TESTING.txt`.
+  runtime and development files). With Inno Setup 6, `packaging/windows/build-package.ps1` makes
+  the installer; see `packaging/windows/TESTING.txt`.
+- **macOS:** Xcode's command-line tools and GStreamer 1.24 or later (`brew install gstreamer`, or
+  the official framework for a universal build). `packaging/macos/build-package.sh` makes the
+  installer package (the app, the Core Audio driver, inletd as a launchd daemon); see
+  `packaging/macos/TESTING.txt`.
 - **Linux:** the ALSA, PipeWire, X11, FreeType and Fontconfig development packages; the
   Dockerfiles in `packaging/linux/docker` list them for Debian, Rocky Linux and Arch. In the build
   directory, `cpack -G DEB` and `cpack -G RPM` make the packages, and `packaging/linux/arch` has a
@@ -66,8 +73,8 @@ ctest --test-dir build
   and PipeWire devices and of PTP.
 
 Continuous integration (`.github/workflows/ci.yml`) builds and tests every push and pull request
-on Windows, macOS, Debian, Rocky Linux and Arch, and keeps the Windows zip, the macOS package and
-the .deb and .rpm as artifacts of each run.
+on Windows, macOS, Debian, Rocky Linux and Arch, installs and removes each package on the runner,
+and keeps the packages as artifacts of each run. [RELEASING.md](RELEASING.md) describes releases.
 
 ## License
 
