@@ -9,15 +9,27 @@
 #
 # Signs when ARTIFACT_SIGNING_ENDPOINT, ARTIFACT_SIGNING_ACCOUNT and
 # ARTIFACT_SIGNING_PROFILE are set, as the app registration in AZURE_TENANT_ID,
-# AZURE_CLIENT_ID and AZURE_CLIENT_SECRET. Without them the files stay unsigned
-# (a build for this computer), unless INLET_REQUIRE_SIGNING is set, as the
-# release workflow sets it: then that is an error.
+# AZURE_CLIENT_ID and AZURE_CLIENT_SECRET, taken from this process's
+# environment or else from the user's saved environment variables. Without
+# them the files stay unsigned (a build for this computer), unless
+# INLET_REQUIRE_SIGNING is set, as the release workflow sets it: then that is
+# an error.
 
 param([Parameter(Mandatory, ValueFromRemainingArguments)][string[]]$Files)
 $ErrorActionPreference = "Stop"
 
 $ClientPackage = "Microsoft.ArtifactSigning.Client"
 $ClientVersion = "1.0.151"
+
+# Settings saved as the user's environment variables count when this process
+# was started without them (by a shell opened before they were saved).
+foreach ($name in "ARTIFACT_SIGNING_ENDPOINT", "ARTIFACT_SIGNING_ACCOUNT", "ARTIFACT_SIGNING_PROFILE",
+                  "AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET") {
+    if (-not (Test-Path "env:$name")) {
+        $value = [Environment]::GetEnvironmentVariable($name, "User")
+        if ($value) { Set-Item "env:$name" $value }
+    }
+}
 
 function Test-SigningConfigured {
     return [bool]($env:ARTIFACT_SIGNING_ENDPOINT -and $env:ARTIFACT_SIGNING_ACCOUNT -and $env:ARTIFACT_SIGNING_PROFILE)

@@ -84,7 +84,8 @@ principal) holding the **Artifact Signing Certificate Profile Signer** role on t
 
 `packaging/windows/sign.ps1` signs with these through signtool and Microsoft's signing client. On a
 Windows machine with the same environment variables set, `packaging/windows/build-package.ps1`
-makes a signed installer locally.
+makes a signed installer locally. Saved as user environment variables, they apply to every build,
+including from a shell opened before they were saved.
 
 ### macOS: Developer ID and notarization
 

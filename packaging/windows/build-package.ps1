@@ -88,6 +88,7 @@ $sign = Join-Path $PSScriptRoot "sign.ps1"
 $unsigned = Get-ChildItem $stage -Recurse -Include *.exe, *.dll |
     Where-Object { (Get-AuthenticodeSignature $_.FullName).Status -ne "Valid" } | ForEach-Object FullName
 & $sign @unsigned
+# sign.ps1 has loaded any settings saved only as user environment variables.
 $signing = [bool]($env:ARTIFACT_SIGNING_ENDPOINT -and $env:ARTIFACT_SIGNING_ACCOUNT -and $env:ARTIFACT_SIGNING_PROFILE)
 
 # The installer; Inno Setup signs it and its uninstaller through sign.ps1 too.
