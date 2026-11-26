@@ -46,12 +46,15 @@ if (-not $dlib) {
     if (-not $dlib) { throw "$ClientPackage $ClientVersion has no x64 signing dlib." }
 }
 
+# Without a byte order mark, which the client rejects (Windows PowerShell's
+# Set-Content -Encoding UTF8 writes one).
 $metadata = Join-Path $cache "metadata.json"
-@{
+$json = @{
     Endpoint               = $env:ARTIFACT_SIGNING_ENDPOINT
     CodeSigningAccountName = $env:ARTIFACT_SIGNING_ACCOUNT
     CertificateProfileName = $env:ARTIFACT_SIGNING_PROFILE
-} | ConvertTo-Json | Set-Content -Path $metadata -Encoding UTF8
+} | ConvertTo-Json
+[IO.File]::WriteAllText($metadata, $json, (New-Object Text.UTF8Encoding $false))
 
 & $signtool.FullName sign /v /fd SHA256 /tr "http://timestamp.acs.microsoft.com" /td SHA256 /dlib $dlib.FullName /dmdf $metadata @Files
 if ($LASTEXITCODE) { throw "Signing failed ($LASTEXITCODE): $($Files -join ', ')" }
